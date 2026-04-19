@@ -8,7 +8,7 @@ ARG GODOT_VERSION=4.3
 ARG GODOT_RELEASE=stable
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        wget unzip ca-certificates \
+    wget unzip ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Download Godot editor (headless) and export templates
@@ -38,7 +38,7 @@ RUN mkdir -p /build \
 ###############################################################################
 # Stage 2 – Serve with nginx (runs native on any arch)
 ###############################################################################
-FROM nginx:1.27-alpine
+FROM nginx:1.29.8-alpine
 
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf

@@ -1,0 +1,9 @@
+.worktrees/
+.gradle/
+build/
+**/build/
+!gradle/build/
+*.iml
+services/**/bin/
+.idea/
+.DS_Store
