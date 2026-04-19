@@ -41,10 +41,3 @@ jobs:
         with:
           name: qa-manifest
           path: /tmp/qa-manifest/
-
-      - name: Start QA
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.PAT }}
-          repository: drshooby/devops-final-infra
-          event-type: begin-qa
