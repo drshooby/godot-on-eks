@@ -76,3 +76,9 @@ jobs:
         env:
           AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: ./scripts/build_and_push.sh "${{ matrix.service }}" "$AWS_ID" "qa"
+
+      - name: Upload QA Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-manifest-${{ matrix.service }}
+          path: /tmp/qa-manifest/

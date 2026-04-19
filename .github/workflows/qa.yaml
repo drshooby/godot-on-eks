@@ -13,6 +13,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
 
     steps:
       - name: Checkout repo
@@ -24,52 +25,47 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Download QA Manifest
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: qa-manifest*
+          merge-multiple: true
+          path: /tmp/qa-manifest
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Terraform Init
+      - name: Build QA Image List
+        id: images
         run: |
-          cd infra/01-run-qa/terraform
-          terraform init -input=false
-
-      - name: Terraform Validate
-        run: |
-          cd infra/01-run-qa/terraform
-          terraform validate
-
-      - name: Terraform Plan
-        run: |
-          cd infra/01-run-qa/terraform
-          terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        run: |
-          cd infra/01-run-qa/terraform
-          terraform apply -auto-approve tfplan || echo "Terraform apply failed, possibly because resources already exist."
-
-      - name: Get QA Instance ID
-        id: get-instance
-        run: |
-          cd infra/01-run-qa/terraform
-          echo "QA_INSTANCE_ID=$(terraform output -raw qa_instance_id)" >> $GITHUB_ENV
+          if [ -d /tmp/qa-manifest ] && [ "$(ls -A /tmp/qa-manifest 2>/dev/null)" ]; then
+            QA_IMAGES=""
+            for f in /tmp/qa-manifest/*; do
+              SERVICE="$(basename "$f")"
+              TAG="$(cat "$f" | tr -d '[:space:]')"
+              QA_IMAGES="${QA_IMAGES}${SERVICE}:${TAG},"
+            done
+            QA_IMAGES="${QA_IMAGES%,}"
+            echo "QA_IMAGES=$QA_IMAGES" >> $GITHUB_ENV
+            echo "Using exact image tags from build: $QA_IMAGES"
+          else
+            echo "QA_IMAGES=" >> $GITHUB_ENV
+            echo "No manifest found, will query ECR for qa-tagged images"
+          fi
 
       - name: Upload QA Artifacts to S3
         run: |
           chmod +x ./infra/01-run-qa/scripts/add_to_s3.sh
           ./infra/01-run-qa/scripts/add_to_s3.sh
 
-      - name: Wait for QA Machine Status OK
+      - name: Invoke QA Lambda
         run: |
-          chmod +x ./infra/01-run-qa/scripts/wait.sh
-          ./infra/01-run-qa/scripts/wait.sh ${{ env.QA_INSTANCE_ID }}
-
-      - name: Start QA via SSM
-        run: |
-          chmod +x ./infra/01-run-qa/scripts/send_qa_commands.sh
-          ./infra/01-run-qa/scripts/send_qa_commands.sh ${{ env.QA_INSTANCE_ID }}
-
-      - name: Terraform Destroy QA Infra
-        if: always()
-        run: |
-          cd infra/01-run-qa/terraform
-          terraform destroy -auto-approve
+          PAYLOAD="{\"qa_images\": \"${{ env.QA_IMAGES }}\"}"
+          aws lambda invoke \
+            --function-name qa-runner \
+            --region us-east-1 \
+            --invocation-type Event \
+            --payload "$PAYLOAD" \
+            --cli-binary-format raw-in-base64-out \
+            /dev/null
+          echo "QA Lambda kicked off successfully."

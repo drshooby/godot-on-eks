@@ -36,6 +36,12 @@ jobs:
             ./scripts/build_and_push.sh "$dir" "$AWS_ID" "qa"
           done < SERVICE_LIST
 
+      - name: Upload QA Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-manifest
+          path: /tmp/qa-manifest/
+
       - name: Start QA
         uses: peter-evans/repository-dispatch@v3
         with:
