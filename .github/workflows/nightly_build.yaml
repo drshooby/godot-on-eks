@@ -1,0 +1,78 @@
+name: Nightly Build and Push to ECR
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 0 * * *'
+
+jobs:
+  detect_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: tj-actions/changed-files@v44
+        id: changed-files
+        with:
+          dir_names: "true"
+      - name: Determine what changed
+        id: filter
+        run: |
+          CHANGED="${{ steps.changed-files.outputs.all_changed_files }}"
+          echo "Changed dirs: $CHANGED"
+          SERVICES="[]"
+          while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
+            # Derive the source path to match against changed dirs
+            # backend/auth-service -> backend/services/auth-service
+            # shooter -> shooter
+            if [[ "$entry" == backend/* ]]; then
+              SRC_DIR="backend/services/$(basename "$entry")"
+            else
+              SRC_DIR="$entry"
+            fi
+            for dir in $CHANGED; do
+              if [[ "$dir" == "$SRC_DIR"* ]]; then
+                SERVICES=$(echo "$SERVICES" | jq -c --arg s "$entry" '. + [$s] | unique')
+                break
+              fi
+            done
+          done < SERVICE_LIST
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+          echo "Will build: $SERVICES"
+
+  build_and_push:
+    needs: detect_changes
+    if: needs.detect_changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect_changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Docker login to ECR
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+          docker login --username AWS --password-stdin \
+            "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
+
+      - run: chmod +x ./scripts/build_and_push.sh
+
+      - name: Build and push
+        env:
+          AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: ./scripts/build_and_push.sh "${{ matrix.service }}" "$AWS_ID" "qa"

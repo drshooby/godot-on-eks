@@ -1,0 +1,44 @@
+name: Build and Push to ECR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_and_push_all:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+          
+      - name: Docker login to ECR
+        env: 
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+          docker login --username AWS --password-stdin \
+            "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
+
+      - run: chmod +x ./scripts/build_and_push.sh
+
+      - name: Build and Push Services
+        env:
+          AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          while IFS= read -r dir; do
+            [[ -z "$dir" ]] && continue
+            ./scripts/build_and_push.sh "$dir" "$AWS_ID" "qa"
+          done < SERVICE_LIST
+
+      - name: Start QA
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT }}
+          repository: drshooby/devops-final-infra
+          event-type: begin-qa
