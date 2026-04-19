@@ -2,7 +2,7 @@ name: QA
 
 on:
   workflow_run:
-    workflows: [nightly_build,force_build]
+    workflows: [Manual Build and Push All to ECR, Nightly Build and Push to ECR]
     types: [completed]
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
           merge-multiple: true
           path: /tmp/qa-manifest
           run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PAT }}
 
       - name: Build QA Image List
         id: images
