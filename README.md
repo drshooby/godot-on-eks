@@ -33,11 +33,10 @@ Creates:
 
 ### GitHub Actions Secrets
 
-| Secret               | Description                                                         |
-| -------------------- | ------------------------------------------------------------------- |
-| `AWS_ROLE_TO_ASSUME` | OIDC role ARN for GitHub Actions to assume                          |
-| `AWS_ACCOUNT_ID`     | AWS account ID (used for ECR login)                                 |
-| `PAT`                | GitHub PAT for cross-repo dispatch to `drshooby/devops-final-infra` |
+| Secret               | Description                                |
+| -------------------- | ------------------------------------------ |
+| `AWS_ROLE_TO_ASSUME` | OIDC role ARN for GitHub Actions to assume |
+| `AWS_ACCOUNT_ID`     | AWS account ID (used for ECR login)        |
 
 ### Workflows
 
