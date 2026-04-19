@@ -44,7 +44,6 @@ FROM nginx:1.29.8-alpine
 RUN rm /etc/nginx/conf.d/default.conf
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY wasm-dev-login.json /usr/share/nginx/html/wasm-dev-login.json
 COPY --from=builder /build /usr/share/nginx/html
 
 EXPOSE 80

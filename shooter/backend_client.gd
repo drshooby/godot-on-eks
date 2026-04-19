@@ -1,7 +1,7 @@
 extends Node
 ## HTTP client for auth, score, session. URLs: Project Settings → fps/network.
 ## Defaults target the nginx reverse proxy on :8090 (/api/auth, /api/score, /api/sess). Web export uses window.location.origin + same paths.
-## Login screen (default) or dev shortcuts: env FPS_EMAIL/FPS_PASSWORD, WASM wasm-dev-login.json.
+## Login screen (default) or dev shortcut: env FPS_EMAIL/FPS_PASSWORD.
 
 signal status_line_changed(line: String)
 signal login_succeeded
@@ -48,14 +48,12 @@ func _bootstrap() -> void:
 	print("BackendClient: APIs auth=%s score=%s session=%s" % [_auth_base, _score_base, _session_base])
 	if await try_login_from_env():
 		print("BackendClient: logged in via FPS_EMAIL/FPS_PASSWORD")
-	elif _is_web_export():
-		await try_login_from_wasm_dev_json()
 	var auth_health := await ping_auth_health()
 	bootstrap_done = true
 	status_line_changed.emit(_compose_status_line(auth_health))
 	if jwt.is_empty():
 		print(
-			"BackendClient: no JWT yet — use the login screen (or FPS_EMAIL/FPS_PASSWORD / wasm-dev-login.json for dev)."
+			"BackendClient: no JWT yet — use the login screen (or FPS_EMAIL/FPS_PASSWORD for dev)."
 		)
 
 
@@ -97,30 +95,6 @@ func try_login_from_env() -> bool:
 		return false
 	return await login(email, password)
 
-
-func try_login_from_wasm_dev_json() -> void:
-	var origin := _wasm_page_origin()
-	if origin.is_empty():
-		push_warning("BackendClient: wasm page origin empty — wasm-dev-login skipped.")
-		return
-	var url := origin.path_join("wasm-dev-login.json")
-	print("BackendClient: fetching ", url)
-	var err := _http.request(url, PackedStringArray(), HTTPClient.METHOD_GET, "")
-	if err != OK:
-		push_error("BackendClient: wasm-dev-login GET failed (%s)" % err)
-		return
-	var result = await _http.request_completed
-	var parsed := _parse_response_body(result)
-	if parsed.is_empty():
-		print("BackendClient: wasm-dev-login empty or bad response — fill email/password in wasm-dev-login.json + rebuild shooter image")
-		return
-	var email := str(parsed.get("email", "")).strip_edges()
-	var password := str(parsed.get("password", ""))
-	if email.is_empty() or password.is_empty():
-		print("BackendClient: wasm-dev-login has empty email/password")
-		return
-	print("BackendClient: POST /login for ", email)
-	await login(email, password)
 
 
 func _wasm_page_origin() -> String:
