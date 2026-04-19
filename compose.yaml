@@ -1,9 +1,98 @@
+# Local stack: MySQL + three JVM services + Godot shooter (WASM/nginx).
+#
+# Copy .env.example to .env and set values before `docker compose up`.
+# JWT_SECRET: use a long random string (32+ characters recommended for HS256).
+
 services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-fps}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jvm
+      args:
+        MODULE: auth-service
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: "3306"
+      DATABASE_NAME: ${MYSQL_DATABASE:-fps}
+      DATABASE_USER: ${MYSQL_USER}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  score-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jvm
+      args:
+        MODULE: score-service
+    ports:
+      - "8082:8080"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: "3306"
+      DATABASE_NAME: ${MYSQL_DATABASE:-fps}
+      DATABASE_USER: ${MYSQL_USER}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  session-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jvm
+      args:
+        MODULE: session-service
+    ports:
+      - "8083:8080"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: "3306"
+      DATABASE_NAME: ${MYSQL_DATABASE:-fps}
+      DATABASE_USER: ${MYSQL_USER}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      mysql:
+        condition: service_healthy
+
   shooter:
     build:
       context: ./shooter
       dockerfile: Dockerfile
     ports:
-      - 8080:80
-    # volumes:
-    #   - ./shooter:/app
+      - "8090:80"
+
+volumes:
+  mysql_data:

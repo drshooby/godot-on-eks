@@ -1,0 +1,10 @@
+.git
+.worktrees
+shooter/
+.gradle
+**/build/
+.idea
+*.iml
+.DS_Store
+.env
+*.log

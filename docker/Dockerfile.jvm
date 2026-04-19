@@ -1,0 +1,23 @@
+# Multi-stage fat-jar image for auth-service, score-service, session-service.
+# Build: docker build -f docker/Dockerfile.jvm --build-arg MODULE=auth-service .
+
+FROM gradle:9.4.1-jdk21-alpine AS builder
+ARG MODULE=auth-service
+WORKDIR /app
+
+COPY gradle gradle
+COPY gradlew gradlew.bat gradle.properties settings.gradle.kts build.gradle.kts ./
+COPY services ./services
+
+RUN chmod +x gradlew \
+    && ./gradlew --no-daemon ":${MODULE}:shadowJar"
+
+FROM eclipse-temurin:21-jre-alpine
+ARG MODULE=auth-service
+WORKDIR /app
+
+COPY --from=builder "/app/services/${MODULE}/build/libs/${MODULE}.jar" app.jar
+
+EXPOSE 8080
+ENV PORT=8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
