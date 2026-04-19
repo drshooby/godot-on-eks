@@ -9,6 +9,7 @@ version = "0.1.0"
 
 dependencies {
     implementation(libs.groovy.core)
+    implementation(libs.groovy.json)
     implementation(libs.spark.core)
     implementation(libs.mysql.connector)
     implementation(libs.hikari)

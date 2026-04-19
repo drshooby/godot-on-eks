@@ -25,6 +25,10 @@ application {
     mainClass.set("com.fps.auth.MainKt")
 }
 
+kotlin {
+    jvmToolchain(21)
+}
+
 tasks.shadowJar {
     archiveBaseName.set("auth-service")
     archiveClassifier.set("")

@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.0.21"
+kotlin = "2.1.21"
 ktor = "3.0.3"
 scala = "3.3.4"
 spark = "2.9.4"
@@ -28,6 +28,7 @@ jbcrypt = { module = "org.mindrot:jbcrypt", version.ref = "jbcrypt" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version = "2.0.16" }
 spark-core = { module = "com.sparkjava:spark-core", version.ref = "spark" }
 groovy-core = { module = "org.codehaus.groovy:groovy", version.ref = "groovy" }
+groovy-json = { module = "org.codehaus.groovy:groovy-json", version.ref = "groovy" }
 http4s-ember-server = { module = "org.http4s:http4s-ember-server_3", version.ref = "http4s" }
 http4s-dsl = { module = "org.http4s:http4s-dsl_3", version.ref = "http4s" }
 http4s-circe = { module = "org.http4s:http4s-circe_3", version.ref = "http4s" }
