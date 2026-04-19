@@ -28,3 +28,17 @@ backend/services/**/bin/
 # --- OS ---
 .DS_Store
 .env
+
+# --- Terraform ---
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+terraform.tfvars
+terraform.tfvars.*
+terraform.tfvars.json
+terraform.tfvars.json.*
+terraform.tfvars.json.json
+terraform.tfvars.json.json.*
+
+# --- QA ---
+*.zip
