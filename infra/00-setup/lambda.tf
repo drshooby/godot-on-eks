@@ -19,6 +19,7 @@ resource "aws_lambda_function" "qa_runner" {
       SG_ID            = aws_security_group.qa_ec2.id
       AMI_ID           = var.qa_ami_id
       INSTANCE_PROFILE = aws_iam_instance_profile.qa_ec2.name
+      QA_BUCKET        = var.qa_bucket_name
     }
   }
 

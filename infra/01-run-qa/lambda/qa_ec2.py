@@ -10,6 +10,7 @@ SUBNET_ID = os.environ["SUBNET_ID"]
 SG_ID = os.environ["SG_ID"]
 AMI_ID = os.environ["AMI_ID"]
 INSTANCE_PROFILE = os.environ["INSTANCE_PROFILE"]
+QA_BUCKET = os.environ["QA_BUCKET"]
 
 
 def launch_instance():
@@ -55,7 +56,7 @@ def run_qa(instance_id, qa_images=""):
         "export PATH=/home/ssm-user/.docker/cli-plugins:$PATH",
         f"export QA_IMAGES='{qa_images}'",
         "yum install -y jq",
-        "aws s3 cp s3://godot-eks-qa-2025/qa ./qa --recursive --region us-east-1",
+        f"aws s3 cp s3://{QA_BUCKET}/qa ./qa --recursive --region us-east-1",
         "chmod +x ./qa/*.sh",
         "./qa/qa_run_all.sh",
     ]

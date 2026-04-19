@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-BUCKET_NAME="godot-eks-qa-2025"
+BUCKET_NAME="${QA_BUCKET:-godot-eks-qa-2025}"
 SOURCE_DIR="./infra/01-run-qa/setup"
 
 if [ ! -d "$SOURCE_DIR" ]; then
