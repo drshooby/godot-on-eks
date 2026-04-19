@@ -9,7 +9,7 @@
 build/
 **/build/
 !gradle/build/
-services/**/bin/
+backend/services/**/bin/
 *.class
 *.jar
 !gradle/wrapper/gradle-wrapper.jar

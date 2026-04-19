@@ -1,6 +1,5 @@
 .git
 .worktrees
-shooter/
 .gradle
 **/build/
 .idea
