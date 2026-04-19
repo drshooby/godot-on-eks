@@ -6,7 +6,7 @@ ARG MODULE=auth-service
 WORKDIR /app
 
 COPY gradle gradle
-COPY gradlew gradlew.bat gradle.properties settings.gradle.kts build.gradle.kts ./
+COPY gradlew gradle.properties settings.gradle.kts build.gradle.kts ./
 COPY services ./services
 
 RUN chmod +x gradlew \
