@@ -1,10 +1,38 @@
-.worktrees/
+# --- Secrets & local env (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Gradle / JVM ---
 .gradle/
 .kotlin/
 build/
 **/build/
 !gradle/build/
-*.iml
 services/**/bin/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- IDE ---
 .idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Godot (editor / import cache; keep committed assets + .import sidecars as you prefer) ---
+.godot/
+
+# --- OS ---
 .DS_Store
+Thumbs.db
+
+# --- Git worktrees (superpowers / parallel branches) ---
+.worktrees/
+
+# --- Logs & temp ---
+*.log
+tmp/
+temp/

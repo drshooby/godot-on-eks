@@ -75,11 +75,56 @@ From the **repository root** (where `compose.yaml` lives):
 
 ---
 
+## Whole stack (`docker compose up`) + Godot ↔ APIs
+
+Bring **MySQL**, all three JVM apps, and the **WASM shooter** online:
+
+```bash
+cp .env.example .env   # once — fill MYSQL_* , JWT_SECRET
+docker compose up --build -d
+```
+
+Smoke the mapping on the host (**8090** is the single browser entrypoint — static game + reverse proxy to the JVM apps). Direct JVM ports **8081–8083** remain for debugging and `curl`:
+
+```bash
+curl -s http://127.0.0.1:8090/api/auth/health
+curl -s http://127.0.0.1:8081/health
+curl -s http://127.0.0.1:8090/ | head
+```
+
+### Why it works together
+
+- **Ports:** `compose.yaml` still publishes **8081–8083** (auth / score / session) and **8090** (nginx).
+- **Reverse proxy** ([`shooter/nginx.conf`](shooter/nginx.conf)): **`/api/auth/`** → `auth-service`, **`/api/score/`** → `score-service`, **`/api/sess/`** → `session-service`. The WASM client uses **only `8090`** with those prefixes (see [`shooter/project.godot`](shooter/project.godot) `fps/network/*`), so the browser does **not** call **8081–8083** and **does not rely on CORS** for normal play.
+- **`CORS_ALLOWED_ORIGINS`** on the JVM services is still useful if you hit the APIs **directly** on **8081–8083** from a browser or another origin; behind the proxy, same-origin requests from **`http(s)://…:8090`** do not need it.
+- **Offline / desktop:** Godot defaults use **`http://127.0.0.1:8090/api/...`**. Override **`fps/network/*_base_url`** in Project Settings if you point the editor at raw JVM ports (**8081** / **8082** / **8083**) without nginx.
+
+### Login + scores (JWT)
+
+The **in-game login screen** ([`shooter/login_screen.tscn`](shooter/login_screen.tscn)) lets each player **Register** or **Login** against auth-service **`POST /register`** / **`POST /login`**. Passwords must be **8+ characters**. **Continue offline** skips JWT (sessions still end; **`POST /scores`** is skipped without a token).
+
+Optional **dev shortcuts** (skip the UI when set):
+
+| Shortcut | When |
+|----------|------|
+| **`FPS_EMAIL`** / **`FPS_PASSWORD`** env (desktop/editor) | Auto-login at boot if both set. |
+| **`wasm-dev-login.json`** baked into the shooter image | WASM only: nginx serves `/wasm-dev-login.json`; client logs in before showing the overlay if JWT was still empty. |
+
+Keep **[`wasm-dev-login.json`](shooter/wasm-dev-login.json)** with empty strings if you rely only on the **login screen** after rebuilding the WASM image.
+
+### Quick checklist
+
+1. `.env` filled so MySQL and JVM services stay healthy (`docker compose ps`).
+2. Use the game UI to **Register** once per email, then **Login** — or **`curl`** register as in [Minimal API flow](#minimal-api-flow-copy-paste).
+3. Press **Start**, play a run — on game over **`POST /scores`** then **`POST /session/end`** hit the backends (logs: `docker compose logs -f score-service session-service`).
+
+---
+
 ## Environment variables (the part everyone forgets)
 
 ### File: `.env` (you create from `.env.example`)
 
-Docker Compose automatically loads a file named **`.env`** in the same directory as `compose.yaml` for **variable substitution** in the YAML (`${MYSQL_USER}` etc.). Your services also use `env_file: .env` so you can add extra keys later without editing `compose.yaml`.
+Docker Compose automatically loads a file named **`.env`** in the same directory as `compose.yaml` for **variable substitution** in the YAML (`${MYSQL_USER}` etc.). Compose reads **`.env`** automatically for **`${MYSQL_*}`** substitution in `compose.yaml` when you run commands from that directory.
 
 | Variable | Required | Used by | Purpose |
 |----------|----------|---------|---------|
@@ -214,7 +259,8 @@ docker build -f docker/Dockerfile.jvm --build-arg MODULE=auth-service -t fps-aut
 
 | Symptom | Likely cause |
 |---------|----------------|
-| Compose warns about unset `MYSQL_*` | `.env` missing or variables empty |
+| Compose warns about unset `MYSQL_*` | `.env` missing or variables empty — Compose now **refuses** to interpolate blank `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD` (fix `.env` and retry) |
+| **`Access denied for user 'fps'@'…' (using password: YES)`** | Almost always **password mismatch**: the **`mysql_data`** volume was created the **first** time MySQL ran; changing `MYSQL_PASSWORD` in `.env` later does **not** update MySQL’s stored password. **Fix:** `docker compose down -v` (drops the volume — **data loss**), verify `.env` matches what you want, then `docker compose up --build -d`. Alternatively keep the volume and reset the user inside MySQL with `ALTER USER` (advanced). |
 | Apps exit / “Communications link failure” | MySQL not healthy yet; wait for **`mysql` healthy** (`docker compose ps`). Check `DATABASE_*` match `MYSQL_*` |
 | `401` on score/session | Wrong/expired JWT or **`JWT_SECRET`** changed between register and request |
 | Schema wrong after editing SQL | Volume already initialized — use `docker compose down -v` and recreate (data loss) |
