@@ -47,21 +47,27 @@ if [[ -z "$MANIFEST" || "$MANIFEST" == "None" ]]; then
   exit 1
 fi
 
-# Delete existing tag if present
-echo "Deleting existing $ENVIRONMENT tag (if present)..."
-aws ecr batch-delete-image \
-  --repository-name "$SERVICE_NAME" \
-  --image-ids imageTag="$ENVIRONMENT" \
-  --region "$REGION" || true
+# Apply environment and latest tags to the same image
+for TAG in "$ENVIRONMENT" "latest"; do
+  echo "Deleting existing $TAG tag (if present)..."
+  aws ecr batch-delete-image \
+    --repository-name "$SERVICE_NAME" \
+    --image-ids imageTag="$TAG" \
+    --region "$REGION" || true
 
-# Put new tag
-echo "Promoting $SERVICE_NAME:$SORTABLE_TAG to $ENVIRONMENT"
-aws ecr put-image \
-  --repository-name "$SERVICE_NAME" \
-  --image-tag "$ENVIRONMENT" \
-  --image-manifest "$MANIFEST" \
-  --region "$REGION"
+  echo "Tagging $SERVICE_NAME:$SORTABLE_TAG as $TAG"
+  aws ecr put-image \
+    --repository-name "$SERVICE_NAME" \
+    --image-tag "$TAG" \
+    --image-manifest "$MANIFEST" \
+    --region "$REGION"
+done
 
 echo "Successfully promoted:"
 echo "   • $REPO:$SORTABLE_TAG"
 echo "   • $REPO:$ENVIRONMENT (now points to $SORTABLE_TAG)"
+echo "   • $REPO:latest (now points to $SORTABLE_TAG)"
+
+# Write manifest entry for downstream QA consumption
+mkdir -p /tmp/qa-manifest
+echo "$SORTABLE_TAG" > "/tmp/qa-manifest/${SERVICE_NAME}"
