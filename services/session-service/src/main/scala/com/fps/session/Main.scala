@@ -18,6 +18,30 @@ object Main:
     val port = Option(System.getenv("PORT")).flatMap(_.toIntOption).getOrElse(8080)
     Spark.port(port)
 
+    val corsOrigins =
+      Option(System.getenv("CORS_ALLOWED_ORIGINS")).getOrElse(
+        "http://localhost:8090,http://127.0.0.1:8090",
+      ).split(',').map(_.trim).filter(_.nonEmpty).toSeq
+
+    def applyCors(req: Request, res: Response): Unit =
+      Option(req.headers("Origin")) match
+        case Some(origin) if corsOrigins.contains(origin) =>
+          res.header("Access-Control-Allow-Origin", origin)
+          res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+          res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        case _ => ()
+
+    Spark.before((req: Request, res: Response) => applyCors(req, res))
+
+    Spark.options(
+      "/*",
+      (req: Request, res: Response) => {
+        applyCors(req, res)
+        res.status(204)
+        ""
+      },
+    )
+
     val ds = createDs()
     val secret = Option(System.getenv("JWT_SECRET")).getOrElse:
       throw IllegalStateException("JWT_SECRET required")
