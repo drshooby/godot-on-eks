@@ -6,4 +6,4 @@ Godot shmup + JVM backend (Phase 2: auth / score / session services, MySQL).
 
 High-level delivery plan: [PLAN.md](./PLAN.md).
 
-Game code from [KidsCanCode Your First 2D Game](https://kidscancode.org/godot_recipes/4.x/games/first_2d/first_2d_01/index.html).
+Game code from [KidsCanCode: Your First 2D Game](https://kidscancode.org/godot_recipes/4.x/games/first_2d/first_2d_01/index.html).
