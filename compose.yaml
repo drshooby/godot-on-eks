@@ -7,10 +7,11 @@ services:
   mysql:
     image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # Fail fast if .env is missing — blank MYSQL_* yields broken DB users and "Access denied" from apps.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-fps}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -33,12 +34,10 @@ services:
       DATABASE_HOST: mysql
       DATABASE_PORT: "3306"
       DATABASE_NAME: ${MYSQL_DATABASE:-fps}
-      DATABASE_USER: ${MYSQL_USER}
-      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      DATABASE_USER: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
-    env_file:
-      - path: .env
-        required: false
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8090,http://127.0.0.1:8090}
     depends_on:
       mysql:
         condition: service_healthy
@@ -55,12 +54,10 @@ services:
       DATABASE_HOST: mysql
       DATABASE_PORT: "3306"
       DATABASE_NAME: ${MYSQL_DATABASE:-fps}
-      DATABASE_USER: ${MYSQL_USER}
-      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      DATABASE_USER: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
-    env_file:
-      - path: .env
-        required: false
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8090,http://127.0.0.1:8090}
     depends_on:
       mysql:
         condition: service_healthy
@@ -77,12 +74,10 @@ services:
       DATABASE_HOST: mysql
       DATABASE_PORT: "3306"
       DATABASE_NAME: ${MYSQL_DATABASE:-fps}
-      DATABASE_USER: ${MYSQL_USER}
-      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      DATABASE_USER: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-use-at-least-32-characters-for-hs256!!}
-    env_file:
-      - path: .env
-        required: false
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8090,http://127.0.0.1:8090}
     depends_on:
       mysql:
         condition: service_healthy
@@ -93,6 +88,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8090:80"
+    depends_on:
+      auth-service:
+        condition: service_started
+      score-service:
+        condition: service_started
+      session-service:
+        condition: service_started
 
 volumes:
   mysql_data:
