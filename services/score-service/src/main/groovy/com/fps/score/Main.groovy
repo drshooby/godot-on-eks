@@ -6,13 +6,37 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import spark.Filter
 import spark.Request
+import spark.Response
 import spark.Spark
 
 class Main {
+    static void applyCors(Request req, Response res, List<String> origins) {
+        String origin = req.headers('Origin')
+        if (origin != null && origins.contains(origin)) {
+            res.header('Access-Control-Allow-Origin', origin)
+            res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        }
+    }
+
     static void main(String[] args) {
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"))
         Spark.port(port)
+
+        def corsOrigins = (System.getenv('CORS_ALLOWED_ORIGINS') ?: 'http://localhost:8090,http://127.0.0.1:8090')
+                .split(',').collect { it.trim() }.grep { it }
+
+        Spark.before({
+            Request req, Response res -> applyCors(req, res, corsOrigins)
+        } as Filter)
+
+        Spark.options('/*') { Request req, Response res ->
+            applyCors(req, res, corsOrigins)
+            res.status(204)
+            ''
+        }
 
         def ds = createDs()
         def secret = System.getenv("JWT_SECRET")
