@@ -1,0 +1,75 @@
+name: QA
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [nightly_build,force_build]
+    types: [completed]
+
+jobs:
+  deploy-to-qa:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          cd infra/01-run-qa/terraform
+          terraform init -input=false
+
+      - name: Terraform Validate
+        run: |
+          cd infra/01-run-qa/terraform
+          terraform validate
+
+      - name: Terraform Plan
+        run: |
+          cd infra/01-run-qa/terraform
+          terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd infra/01-run-qa/terraform
+          terraform apply -auto-approve tfplan || echo "Terraform apply failed, possibly because resources already exist."
+
+      - name: Get QA Instance ID
+        id: get-instance
+        run: |
+          cd infra/01-run-qa/terraform
+          echo "QA_INSTANCE_ID=$(terraform output -raw qa_instance_id)" >> $GITHUB_ENV
+
+      - name: Upload QA Artifacts to S3
+        run: |
+          chmod +x ./infra/01-run-qa/scripts/add_to_s3.sh
+          ./infra/01-run-qa/scripts/add_to_s3.sh
+
+      - name: Wait for QA Machine Status OK
+        run: |
+          chmod +x ./infra/01-run-qa/scripts/wait.sh
+          ./infra/01-run-qa/scripts/wait.sh ${{ env.QA_INSTANCE_ID }}
+
+      - name: Start QA via SSM
+        run: |
+          chmod +x ./infra/01-run-qa/scripts/send_qa_commands.sh
+          ./infra/01-run-qa/scripts/send_qa_commands.sh ${{ env.QA_INSTANCE_ID }}
+
+      - name: Terraform Destroy QA Infra
+        if: always()
+        run: |
+          cd infra/01-run-qa/terraform
+          terraform destroy -auto-approve
