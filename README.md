@@ -33,10 +33,11 @@ Creates:
 
 ### GitHub Actions Secrets
 
-| Secret               | Description                                |
-| -------------------- | ------------------------------------------ |
-| `AWS_ROLE_TO_ASSUME` | OIDC role ARN for GitHub Actions to assume |
-| `AWS_ACCOUNT_ID`     | AWS account ID (used for ECR login)        |
+| Secret               | Description                                      |
+| -------------------- | ------------------------------------------------ |
+| `AWS_ROLE_TO_ASSUME` | OIDC role ARN for GitHub Actions to assume       |
+| `AWS_ACCOUNT_ID`     | AWS account ID (used for ECR login)              |
+| `GITHUB_TOKEN`       | PAT for downloading different workflow artifacts |
 
 ### Workflows
 
