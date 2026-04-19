@@ -1,0 +1,5 @@
+.godot/
+.git/
+.import/
+*.md
+.DS_Store
