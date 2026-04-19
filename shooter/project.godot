@@ -19,6 +19,17 @@ run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://Mini Pixel Pack 3/UI objects/Player_life_icon (16 x 16).png"
 
+[fps/network]
+
+auth_base_url="http://127.0.0.1:8090/api/auth"
+score_base_url="http://127.0.0.1:8090/api/score"
+session_base_url="http://127.0.0.1:8090/api/sess"
+web_origin_fallback="http://127.0.0.1:8090"
+
+[autoload]
+
+BackendClient="*res://backend_client.gd"
+
 [display]
 
 window/size/viewport_width=240

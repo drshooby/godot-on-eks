@@ -1,5 +1,6 @@
-[gd_scene load_steps=12 format=3 uid="uid://b8exv6qda8frv"]
+[gd_scene load_steps=13 format=3 uid="uid://b8exv6qda8frv"]
 
+[ext_resource type="PackedScene" path="res://login_screen.tscn" id="login_scene"]
 [ext_resource type="Texture2D" uid="uid://cwuy4b17rh7ql" path="res://Mini Pixel Pack 3/Space_BG (2 frames) (64 x 64).png" id="1_hjad5"]
 [ext_resource type="Script" path="res://main.gd" id="1_vtt5l"]
 [ext_resource type="PackedScene" uid="uid://b32476hejmrnj" path="res://player.tscn" id="2_tiq3a"]
@@ -50,6 +51,8 @@ _data = {
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_vtt5l")
+
+[node name="LoginScreen" parent="." instance=ExtResource("login_scene")]
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 
