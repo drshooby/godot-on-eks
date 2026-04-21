@@ -1,0 +1,49 @@
+name: "Feature Request"
+description: "Suggest something new."
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Area
+      options:
+        - Game (Godot / shooter)
+        - Backend service (auth / score / session)
+        - Infra (Terraform / AWS)
+        - CI/CD (GitHub Actions / workflows)
+        - Scripts / tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: "Players have no way to see their past scores between sessions."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like?
+      placeholder: "A leaderboard endpoint and a simple in-game screen showing top 10 scores."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: "Could store scores client-side, but they'd be lost on restart."
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+    validations:
+      required: false

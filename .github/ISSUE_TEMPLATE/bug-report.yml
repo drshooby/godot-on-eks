@@ -1,0 +1,61 @@
+name: "Bug Report"
+description: "Something is broken."
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Where is it broken?
+      options:
+        - Game (Godot / shooter)
+        - Backend service (auth / score / session)
+        - Infra (Terraform / AWS)
+        - CI/CD (GitHub Actions / workflows)
+        - Scripts / tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: What did you see?
+      placeholder: "Score-service returned 500 on POST /scores after a session expires."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "Should return 200 and persist the score."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the stack: `docker compose up -d`
+        2. Hit the endpoint: `curl -X POST ...`
+        3. See the error
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+    validations:
+      required: false
