@@ -99,3 +99,15 @@ variable "db_allocated_storage" {
   type    = number
   default = 20
 }
+
+variable "db_password" {
+  description = "RDS master password for the UAT MySQL instance."
+  type        = string
+  sensitive   = true
+}
+
+variable "jwt_secret" {
+  description = "Shared JWT signing secret for auth/score/session services."
+  type        = string
+  sensitive   = true
+}

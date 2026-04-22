@@ -41,8 +41,9 @@ module "db" {
 
   db_name  = "uatdb"
   username = "dbmaster"
+  password = var.db_password
 
-  manage_master_user_password = true
+  manage_master_user_password = false
 
   port = 3306
 
