@@ -130,3 +130,18 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath=’{.data.p
 ```bash
 infra/02-uat/eks/teardown.sh
 ```
+
+---
+
+## Known issues
+
+### IRSA webhook not injecting tokens into ESO pods
+
+**Symptom:** `ClusterSecretStore` shows `InvalidProviderConfig` / `unable to create session: an IAM role must be associated with service account`. The EKS pod-identity-webhook (`127.0.0.1:23443`) exists with `failurePolicy: Ignore` but silently fails to inject the projected service account token and `AWS_*` env vars into pods, even though the OIDC provider and IAM trust policy are correct.
+
+**Current fix:** The install script passes explicit IRSA volume/env overrides to the ESO Helm release (`extraVolumes`, `extraVolumeMounts`, `extraEnv` for `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, `AWS_REGION`), bypassing the webhook entirely.
+
+**To explore:**
+- Check if installing the `eks-pod-identity-agent` EKS addon resolves the webhook issue (the cluster currently has no managed addons).
+- Check if the webhook works on newer EKS versions (cluster is currently 1.31).
+- Consider switching from IRSA to [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) (simpler, no OIDC provider needed).
