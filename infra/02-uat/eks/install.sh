@@ -79,9 +79,24 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 echo ""
 echo "==> Installing External Secrets Operator..."
 helm repo add external-secrets https://charts.external-secrets.io --force-update
+# Explicit IRSA volume/env — the EKS pod-identity-webhook silently fails to inject
+# these on some clusters (failurePolicy: Ignore). See README "Known issues".
 helm upgrade --install external-secrets external-secrets/external-secrets \
   -n external-secrets \
-  --set serviceAccount.annotations."eks\.amazonaws\.io/role-arn"="$IRSA_ROLE_ARN" \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$IRSA_ROLE_ARN" \
+  --set "extraVolumes[0].name=aws-iam-token" \
+  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.audience=sts.amazonaws.com" \
+  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.expirationSeconds=86400" \
+  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.path=token" \
+  --set "extraVolumeMounts[0].name=aws-iam-token" \
+  --set "extraVolumeMounts[0].mountPath=/var/run/secrets/eks.amazonaws.com/serviceaccount" \
+  --set "extraVolumeMounts[0].readOnly=true" \
+  --set "extraEnv[0].name=AWS_WEB_IDENTITY_TOKEN_FILE" \
+  --set "extraEnv[0].value=/var/run/secrets/eks.amazonaws.com/serviceaccount/token" \
+  --set "extraEnv[1].name=AWS_ROLE_ARN" \
+  --set "extraEnv[1].value=$IRSA_ROLE_ARN" \
+  --set "extraEnv[2].name=AWS_REGION" \
+  --set "extraEnv[2].value=$AWS_REGION" \
   --wait
 
 # ── 5. Argo CD ───────────────────────────────────────────────────────────────
