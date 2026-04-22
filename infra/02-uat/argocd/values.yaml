@@ -1,4 +1,4 @@
-gitRepo: https://github.com/drshooboy/godot-on-eks.git
+gitRepo: https://github.com/drshooby/godot-on-eks.git
 targetRevision: main
 
 # Set at install time: helm upgrade --install ... --set awsAccountId=123456789012
