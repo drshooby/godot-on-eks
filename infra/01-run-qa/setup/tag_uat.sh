@@ -1,9 +1,13 @@
 #!/bin/bash
+# Promote the QA digests listed in qa_images.txt to the `uat-latest` pointer.
+# The source immutable tag (e.g. qa-20260419-a1b2c3d) stays intact in ECR by
+# virtue of digest-preserving `ecr put-image`; we only move the pointer.
 set -euo pipefail
 
 echo " Tagging QA images as UAT..."
 REGION="us-east-1"
 INPUT_FILE="$(pwd)/qa_images.txt"
+POINTER_TAG="uat-latest"
 
 if [ ! -f "$INPUT_FILE" ]; then
   echo " Error: $INPUT_FILE not found. Please run pull_images.sh first."
@@ -30,20 +34,20 @@ while IFS=, read -r repo digest; do
     continue
   fi
 
-  echo " Deleting existing 'uat' tag (if present) for $repo..."
+  echo " Deleting existing '$POINTER_TAG' tag (if present) for $repo..."
   aws ecr batch-delete-image \
     --repository-name "$repo" \
-    --image-ids imageTag="uat" \
+    --image-ids imageTag="$POINTER_TAG" \
     --region "$REGION" || true
 
-  echo " Tagging $repo digest $digest as 'uat'..."
+  echo " Tagging $repo digest $digest as '$POINTER_TAG'..."
   aws ecr put-image \
     --repository-name "$repo" \
-    --image-tag "uat" \
+    --image-tag "$POINTER_TAG" \
     --image-manifest "$manifest" \
     --region "$REGION"
 
-  echo " Tagged $repo image as 'uat'"
+  echo " Tagged $repo image as '$POINTER_TAG'"
 done < "$INPUT_FILE"
 
-echo " All applicable images now tagged with 'uat'."
+echo " All applicable images now tagged with '$POINTER_TAG'."

@@ -34,11 +34,11 @@ for repo in "${REPOS[@]}"; do
     DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ECR_URL/$repo:$TAG" | cut -d'@' -f2)
     echo "$repo,$DIGEST" >> "$OUTPUT_FILE"
   else
-    echo " No manifest entry for $repo, pulling qa tag..."
-    docker pull "$ECR_URL/$repo:qa"
-    docker tag "$ECR_URL/$repo:qa" "$repo"
+    echo " No manifest entry for $repo, pulling qa-latest tag..."
+    docker pull "$ECR_URL/$repo:qa-latest"
+    docker tag "$ECR_URL/$repo:qa-latest" "$repo"
 
-    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ECR_URL/$repo:qa" | cut -d'@' -f2)
+    DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$ECR_URL/$repo:qa-latest" | cut -d'@' -f2)
     echo "$repo,$DIGEST" >> "$OUTPUT_FILE"
   fi
 done

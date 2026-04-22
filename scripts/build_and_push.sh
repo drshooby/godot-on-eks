@@ -3,6 +3,11 @@
 #   DIR_PATH: "backend/<service>" or "shooter"
 #   Backend services use the shared Dockerfile.jvm with MODULE arg.
 #   Shooter builds directly from its own Dockerfile.
+#
+# Tagging scheme:
+#   Immutable build tag:  {service}:{env}-{date}-{gitsha7}
+#   Mutable env pointer:  {service}:{env}-latest
+#   (Semver release tags {service}:{vX.Y.Z} are added separately on release cuts.)
 set -euo pipefail
 
 DIR="$1"                  # e.g. "backend/auth-service" or "shooter"
@@ -13,61 +18,69 @@ REGION="${4:-us-east-1}"
 SERVICE_NAME="$(basename "$DIR")"
 REPO="$ACCOUNT.dkr.ecr.$REGION.amazonaws.com/$SERVICE_NAME"
 
-VERSION="$(tr -d '[:space:]' < VERSION)"
 DATE="$(date +%Y%m%d)"
-SORTABLE_TAG="${VERSION}-${DATE}"
+
+# Prefer CI-provided GITHUB_SHA; fall back to local git rev-parse.
+RAW_SHA="${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || echo '')}"
+if [[ -z "$RAW_SHA" ]]; then
+  echo "Unable to determine git SHA (set GITHUB_SHA or run inside a git repo)" >&2
+  exit 1
+fi
+GITSHA7="${RAW_SHA:0:7}"
+
+BUILD_TAG="${ENVIRONMENT}-${DATE}-${GITSHA7}"
+POINTER_TAG="${ENVIRONMENT}-latest"
 
 echo "Building $SERVICE_NAME from $DIR"
+echo "   build tag   : $BUILD_TAG"
+echo "   pointer tag : $POINTER_TAG"
 
 if [[ "$DIR" == backend/* ]]; then
   docker buildx build --platform linux/amd64 \
     -f backend/docker/Dockerfile.jvm \
     --build-arg "MODULE=$SERVICE_NAME" \
-    -t "$REPO:$SORTABLE_TAG" \
+    -t "$REPO:$BUILD_TAG" \
     backend
 else
   docker buildx build --platform linux/amd64 \
-    -t "$REPO:$SORTABLE_TAG" \
+    -t "$REPO:$BUILD_TAG" \
     "$DIR"
 fi
 
-echo "Pushing $REPO:$SORTABLE_TAG"
-docker push "$REPO:$SORTABLE_TAG"
+echo "Pushing $REPO:$BUILD_TAG"
+docker push "$REPO:$BUILD_TAG"
 
-echo "Fetching image manifest for $SORTABLE_TAG"
+echo "Fetching image manifest for $BUILD_TAG"
 MANIFEST=$(aws ecr batch-get-image \
   --repository-name "$SERVICE_NAME" \
-  --image-ids imageTag="$SORTABLE_TAG" \
+  --image-ids imageTag="$BUILD_TAG" \
   --query 'images[].imageManifest' \
   --output text \
   --region "$REGION")
 
 if [[ -z "$MANIFEST" || "$MANIFEST" == "None" ]]; then
-  echo "Failed to fetch manifest for tag $SORTABLE_TAG"
+  echo "Failed to fetch manifest for tag $BUILD_TAG"
   exit 1
 fi
 
-# Apply environment and latest tags to the same image
-for TAG in "$ENVIRONMENT" "latest"; do
-  echo "Deleting existing $TAG tag (if present)..."
-  aws ecr batch-delete-image \
-    --repository-name "$SERVICE_NAME" \
-    --image-ids imageTag="$TAG" \
-    --region "$REGION" || true
+# Move the mutable env pointer to the new build digest.
+echo "Deleting existing $POINTER_TAG tag (if present)..."
+aws ecr batch-delete-image \
+  --repository-name "$SERVICE_NAME" \
+  --image-ids imageTag="$POINTER_TAG" \
+  --region "$REGION" || true
 
-  echo "Tagging $SERVICE_NAME:$SORTABLE_TAG as $TAG"
-  aws ecr put-image \
-    --repository-name "$SERVICE_NAME" \
-    --image-tag "$TAG" \
-    --image-manifest "$MANIFEST" \
-    --region "$REGION"
-done
+echo "Tagging $SERVICE_NAME:$BUILD_TAG as $POINTER_TAG"
+aws ecr put-image \
+  --repository-name "$SERVICE_NAME" \
+  --image-tag "$POINTER_TAG" \
+  --image-manifest "$MANIFEST" \
+  --region "$REGION"
 
-echo "Successfully promoted:"
-echo "   • $REPO:$SORTABLE_TAG"
-echo "   • $REPO:$ENVIRONMENT (now points to $SORTABLE_TAG)"
-echo "   • $REPO:latest (now points to $SORTABLE_TAG)"
+echo "Successfully pushed:"
+echo "   • $REPO:$BUILD_TAG (immutable)"
+echo "   • $REPO:$POINTER_TAG (now points to $BUILD_TAG)"
 
-# Write manifest entry for downstream QA consumption
+# Write manifest entry for downstream QA consumption.
 mkdir -p /tmp/qa-manifest
-echo "$SORTABLE_TAG" > "/tmp/qa-manifest/${SERVICE_NAME}"
+echo "$BUILD_TAG" > "/tmp/qa-manifest/${SERVICE_NAME}"
