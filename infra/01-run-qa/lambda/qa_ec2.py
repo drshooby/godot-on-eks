@@ -11,11 +11,13 @@ SG_ID = os.environ["SG_ID"]
 AMI_ID = os.environ["AMI_ID"]
 INSTANCE_PROFILE = os.environ["INSTANCE_PROFILE"]
 QA_BUCKET = os.environ["QA_BUCKET"]
+SSM_LOG_GROUP = os.environ.get("SSM_LOG_GROUP", "/aws/ssm/qa-runner")
 
 # Bootstrap script executed as root via EC2 user data on first boot.
 # Installs Docker + the compose plugin on stock Amazon Linux so the ephemeral
-# QA instance can run docker-compose workloads. Kept small and idempotent so
-# it re-runs safely if we ever retry.
+# QA instance can run docker-compose workloads. Needs public-internet egress
+# (provided by the VPC's NAT gateway) to reach the amazonlinux dnf mirrors
+# and github.com for the compose plugin binary.
 #
 # We also symlink the v2 compose plugin to /usr/local/bin/docker-compose
 # because existing QA scripts (compose.sh) still call the hyphenated v1 name.
@@ -52,9 +54,19 @@ touch /var/lib/qa-bootstrap.done
 def launch_instance():
     resp = ec2.run_instances(
         ImageId=AMI_ID,
-        InstanceType="t3.medium",
+        InstanceType="t3.large",
         MinCount=1,
         MaxCount=1,
+        BlockDeviceMappings=[
+        {
+            'Ebs': {
+                'DeleteOnTermination': True,
+                'VolumeSize': 15,
+                'VolumeType': 'gp3'
+            },
+            'DeviceName': '/dev/xvda',
+        },
+    ],
         IamInstanceProfile={"Name": INSTANCE_PROFILE},
         SubnetId=SUBNET_ID,
         SecurityGroupIds=[SG_ID],
@@ -113,9 +125,11 @@ def wait_for_docker(instance_id, max_attempts=30, interval=10):
     """Poll the instance via SSM until the user-data bootstrap finished and
     the Docker daemon answers. Bootstrap drops a sentinel file at
     /var/lib/qa-bootstrap.done once it's complete."""
+    # Single shell line so the `&&` short-circuits — otherwise SSM runs each
+    # list entry as an independent command and the overall exit code only
+    # reflects the LAST one, silently masking a missing sentinel.
     check = [
-        "test -f /var/lib/qa-bootstrap.done",
-        "docker info >/dev/null 2>&1",
+        "test -f /var/lib/qa-bootstrap.done && docker info >/dev/null 2>&1",
     ]
     for attempt in range(1, max_attempts + 1):
         status, stdout, stderr = _run_ssm_blocking(
@@ -148,9 +162,17 @@ def run_qa(instance_id, qa_images=""):
         Comment="QA Run",
         Parameters={"commands": commands},
         TimeoutSeconds=600,
+        # Stream full stdout/stderr to CloudWatch — the inline SSM response
+        # caps at ~24KB which silently truncates verbose docker compose output.
+        CloudWatchOutputConfig={
+            "CloudWatchLogGroupName": SSM_LOG_GROUP,
+            "CloudWatchOutputEnabled": True,
+        },
     )
     command_id = resp["Command"]["CommandId"]
     print(f"Sent SSM command: {command_id}")
+    print(f"Full output streaming to CloudWatch log group: {SSM_LOG_GROUP}")
+    print(f"  aws logs tail {SSM_LOG_GROUP} --log-stream-name-prefix {command_id}")
 
     for attempt in range(1, 61):
         time.sleep(10)
@@ -167,10 +189,19 @@ def run_qa(instance_id, qa_images=""):
             output_resp = ssm.get_command_invocation(
                 CommandId=command_id, InstanceId=instance_id
             )
+            stdout = output_resp.get("StandardOutputContent", "")
+            stderr = output_resp.get("StandardErrorContent", "")
+            if status != "Success":
+                # Dump inline snippets into Lambda logs for fast triage.
+                # Full untruncated output is in the CloudWatch log group above.
+                print(f"=== SSM stdout (truncated by SSM to ~24KB) ===\n{stdout}")
+                print(f"=== SSM stderr (truncated by SSM to ~24KB) ===\n{stderr}")
             return {
                 "status": status,
-                "stdout": output_resp.get("StandardOutputContent", ""),
-                "stderr": output_resp.get("StandardErrorContent", ""),
+                "stdout": stdout,
+                "stderr": stderr,
+                "cloudwatch_log_group": SSM_LOG_GROUP,
+                "cloudwatch_command_id": command_id,
             }
 
     raise TimeoutError(f"SSM command {command_id} did not complete in time")
