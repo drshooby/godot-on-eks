@@ -1,12 +1,17 @@
 replicaCount: 1
 
 image:
-  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/score-service
+  # Overridden by Argo CD ApplicationSet (see infra/02-uat/README.md).
+  repository: score-service
   tag: uat-latest
 
 service:
   port: 8080
   targetPort: 8080
+
+env:
+  # True when a <service>-env Secret exists (created by ExternalSecrets on EKS, or manually for local).
+  enabled: false
 
 externalSecret:
   enabled: false

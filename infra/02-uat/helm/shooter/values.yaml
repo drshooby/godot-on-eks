@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  # Replace REPLACE_ACCOUNT with terraform output aws_account_id (see infra/02-uat/README.md).
-  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/shooter
+  # Overridden by Argo CD ApplicationSet (see infra/02-uat/README.md).
+  repository: shooter
   tag: uat-latest
 
 service:

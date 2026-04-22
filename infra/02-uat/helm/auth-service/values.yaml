@@ -1,7 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/auth-service
+  # Overridden by Argo CD ApplicationSet (see infra/02-uat/README.md).
+  repository: auth-service
   tag: uat-latest
 
 service:
@@ -9,6 +10,10 @@ service:
   targetPort: 8080
 
 # Enable once matching Secrets Manager entries exist (prefix uat/* per Terraform IAM policy).
+env:
+  # True when a <service>-env Secret exists (created by ExternalSecrets on EKS, or manually for local).
+  enabled: false
+
 externalSecret:
   enabled: false
   remoteKey: uat/auth-service
