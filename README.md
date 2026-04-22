@@ -10,6 +10,23 @@ Game code from [KidsCanCode: Your First 2D Game](https://kidscancode.org/godot_r
 
 ---
 
+## UAT (EKS, Gateway API, Argo CD)
+
+**Public URL (target):** `https://uat.shmup.ettukube.com` — DNS is **Route 53 (Terraform)** under a delegated child zone; **`ettukube.com` stays in Cloudflare** for registrar/NS delegation to that zone (one-time manual at Cloudflare). Full sequence, TLS, and promotion flow: **[`docs/uat-plan.md`](./docs/uat-plan.md)**.
+
+| Area | Location |
+|------|-----------|
+| UAT Terraform (VPC, EKS, RDS MySQL, Route 53, IRSA for External Secrets) | [`infra/02-uat/terraform/`](./infra/02-uat/terraform/) |
+| Argo CD wrapper chart (`argo-helm`, pinned) + example `Application` CRs | [`infra/02-uat/argocd/`](./infra/02-uat/argocd/) |
+| Platform + app Helm (Gateway / HTTPRoute, optional ESO) | [`infra/02-uat/helm/`](./infra/02-uat/helm/) |
+| Operator bootstrap order + commands | [`infra/02-uat/README.md`](./infra/02-uat/README.md) |
+
+**Promotion:** after QA passes, **`infra/01-run-qa/setup/tag_uat.sh`** moves validated digests to the ECR pointer tag **`uat-latest`** (immutable QA tags unchanged). Clusters and Helm values default to **`uat-latest`**.
+
+**Prereqs:** AWS account/region, optional GitHub OIDC for CI (see below), Cloudflare access to delegate **`shmup.ettukube.com`** (or your chosen label) to the Route 53 name servers Terraform prints.
+
+---
+
 ## CI/CD Pipeline
 
 ### Day 0 Setup (`infra/00-setup/`)

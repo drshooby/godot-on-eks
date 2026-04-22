@@ -1,0 +1,14 @@
+replicaCount: 1
+
+image:
+  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/auth-service
+  tag: uat-latest
+
+service:
+  port: 8080
+  targetPort: 8080
+
+# Enable once matching Secrets Manager entries exist (prefix uat/* per Terraform IAM policy).
+externalSecret:
+  enabled: false
+  remoteKey: uat/auth-service

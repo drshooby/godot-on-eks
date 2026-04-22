@@ -1,0 +1,13 @@
+replicaCount: 1
+
+image:
+  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/score-service
+  tag: uat-latest
+
+service:
+  port: 8080
+  targetPort: 8080
+
+externalSecret:
+  enabled: false
+  remoteKey: uat/score-service

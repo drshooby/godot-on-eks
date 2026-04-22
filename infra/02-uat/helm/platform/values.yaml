@@ -1,0 +1,20 @@
+publicHostname: uat.shmup.ettukube.com
+
+gateway:
+  name: uat-public
+  namespace: uat
+  # Envoy Gateway (helm install) registers this GatewayClass by default.
+  className: eg
+  # After Certificate has issued and Secret `tls.secretName` exists, set this true and re-sync
+  # so the HTTPS listener can terminate TLS without failing admission.
+  enableHttpsListener: false
+
+aws:
+  region: us-east-1
+
+acme:
+  email: ops@example.com
+  server: https://acme-v02.api.letsencrypt.org/directory
+
+tls:
+  secretName: uat-public-tls
