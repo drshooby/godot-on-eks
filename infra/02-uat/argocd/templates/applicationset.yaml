@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: uat-apps
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          {{- range .Values.apps }}
+          - name: {{ .name }}
+          {{- end }}
+  template:
+    metadata:
+      name: "uat-{{`{{name}}`}}"
+    spec:
+      project: default
+      source:
+        repoURL: {{ .Values.gitRepo }}
+        targetRevision: {{ .Values.targetRevision }}
+        path: "infra/02-uat/helm/{{`{{name}}`}}"
+        helm:
+          valueFiles:
+            - values.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: uat
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

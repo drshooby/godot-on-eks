@@ -1,3 +1,13 @@
+gitRepo: https://github.com/drshooboy/godot-on-eks.git
+targetRevision: main
+
+apps:
+  - name: platform
+  - name: auth-service
+  - name: score-service
+  - name: session-service
+  - name: shooter
+
 # Overrides for argo-cd subchart — keep the UI private by default (port-forward or internal LB later).
 argo-cd:
   global:
