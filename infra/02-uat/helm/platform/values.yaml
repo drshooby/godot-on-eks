@@ -9,6 +9,14 @@ gateway:
   # so the HTTPS listener can terminate TLS without failing admission.
   enableHttpsListener: false
 
+certManager:
+  # Set false to skip ClusterIssuer and Certificate (e.g. local/Docker Desktop).
+  enabled: true
+
+externalSecrets:
+  # Set false to skip ClusterSecretStore (e.g. local/Docker Desktop, no IRSA).
+  enabled: true
+
 aws:
   region: us-east-1
 
