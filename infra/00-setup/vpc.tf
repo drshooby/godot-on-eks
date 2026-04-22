@@ -7,6 +7,15 @@ module "vpc" {
 
   azs             = ["${var.region}a"]
   private_subnets = ["10.0.1.0/24"]
+  public_subnets  = ["10.0.101.0/24"]
+
+  # AI note: Single NAT gateway in the public subnet — catches egress for things we
+  # don't have VPC endpoints for (Docker Hub, github, etc.). VPC interface
+  # and gateway endpoints take precedence over the 0.0.0.0/0 NAT route, so
+  # SSM/ECR/S3 traffic still stays on the private backbone.
+  # Human note: Unfortunately, NAT Gateway won the war, but use endpoints where possible.
+  enable_nat_gateway = true
+  single_nat_gateway = true
 
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -77,4 +86,15 @@ resource "aws_vpc_endpoint" "s3" {
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = module.vpc.private_route_table_ids
+}
+
+# STS — needed by `aws sts get-caller-identity` in pull_images.sh and by any
+# other AWS SDK call that implicitly resolves credentials against STS.
+resource "aws_vpc_endpoint" "sts" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = "com.amazonaws.${var.region}.sts"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc.private_subnets
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
 }
