@@ -48,10 +48,6 @@ output "rds_endpoint" {
   value       = module.db.db_instance_address
 }
 
-output "rds_master_user_secret_arn" {
-  description = "Secrets Manager ARN for RDS master credentials (when manage_master_user_password is true)"
-  value       = module.db.db_instance_master_user_secret_arn
-}
 
 output "external_secrets_irsa_role_arn" {
   description = "Annotate the external-secrets service account with eks.amazonaws.com/role-arn"
