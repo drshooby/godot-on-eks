@@ -4,6 +4,24 @@ on:
   workflow_run:
     workflows: [Manual Build and Push All to ECR, Nightly Build and Push to ECR]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      shooter:
+        description: "Shooter service"
+        required: true
+        default: ""
+      auth-service:
+        description: "Auth service"
+        required: true
+        default: ""
+      score-service:
+        description: "Score service"
+        required: true
+        default: ""
+      session-service:
+        description: "Session service"
+        required: true
+        default: ""
 
 jobs:
   deploy-to-qa:

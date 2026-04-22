@@ -4,10 +4,31 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_and_push_all:
+  list_services:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.read.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Read SERVICE_LIST
+        id: read
+        run: |
+          SERVICES=$(jq -Rnc '[inputs | select(length > 0)]' < SERVICE_LIST)
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+          echo "Will build: $SERVICES"
+
+  build_and_push:
+    needs: list_services
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.list_services.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,29 +39,34 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
-          
+
       - name: Docker login to ECR
-        env: 
+        env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
           aws ecr get-login-password --region us-east-1 | \
           docker login --username AWS --password-stdin \
             "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - run: chmod +x ./scripts/build_and_push.sh
 
-      - name: Build and Push Services
+      - name: Derive service slug
+        id: slug
+        run: echo "value=$(basename '${{ matrix.service }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
         env:
           AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           GITHUB_SHA: ${{ github.sha }}
-        run: |
-          while IFS= read -r dir; do
-            [[ -z "$dir" ]] && continue
-            ./scripts/build_and_push.sh "$dir" "$AWS_ID" "qa"
-          done < SERVICE_LIST
+          BUILDX_CACHE_FROM: type=gha,scope=${{ steps.slug.outputs.value }}
+          BUILDX_CACHE_TO: type=gha,scope=${{ steps.slug.outputs.value }},mode=max
+        run: ./scripts/build_and_push.sh "${{ matrix.service }}" "$AWS_ID" "qa"
 
       - name: Upload QA Manifest
         uses: actions/upload-artifact@v4
         with:
-          name: qa-manifest
+          name: qa-manifest-${{ steps.slug.outputs.value }}
           path: /tmp/qa-manifest/

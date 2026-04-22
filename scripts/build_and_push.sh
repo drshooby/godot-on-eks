@@ -35,15 +35,30 @@ echo "Building $SERVICE_NAME from $DIR"
 echo "   build tag   : $BUILD_TAG"
 echo "   pointer tag : $POINTER_TAG"
 
+# Opt-in buildx cache wiring. When BUILDX_CACHE_FROM / BUILDX_CACHE_TO are set
+# (e.g. in CI with type=gha,scope=<service>), append the flags to both buildx
+# invocations. Local runs with the vars unset stay unchanged.
+CACHE_ARGS=()
+if [[ -n "${BUILDX_CACHE_FROM:-}" ]]; then
+  CACHE_ARGS+=(--cache-from "$BUILDX_CACHE_FROM")
+fi
+if [[ -n "${BUILDX_CACHE_TO:-}" ]]; then
+  CACHE_ARGS+=(--cache-to "$BUILDX_CACHE_TO")
+fi
+
 if [[ "$DIR" == backend/* ]]; then
   docker buildx build --platform linux/amd64 \
     -f backend/docker/Dockerfile.jvm \
     --build-arg "MODULE=$SERVICE_NAME" \
+    "${CACHE_ARGS[@]}" \
     -t "$REPO:$BUILD_TAG" \
+    --load \
     backend
 else
   docker buildx build --platform linux/amd64 \
+    "${CACHE_ARGS[@]}" \
     -t "$REPO:$BUILD_TAG" \
+    --load \
     "$DIR"
 fi
 

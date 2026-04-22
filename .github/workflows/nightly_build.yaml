@@ -73,16 +73,25 @@ jobs:
           docker login --username AWS --password-stdin \
             "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - run: chmod +x ./scripts/build_and_push.sh
+
+      - name: Derive service slug
+        id: slug
+        run: echo "value=$(basename '${{ matrix.service }}')" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         env:
           AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           GITHUB_SHA: ${{ github.sha }}
+          BUILDX_CACHE_FROM: type=gha,scope=${{ steps.slug.outputs.value }}
+          BUILDX_CACHE_TO: type=gha,scope=${{ steps.slug.outputs.value }},mode=max
         run: ./scripts/build_and_push.sh "${{ matrix.service }}" "$AWS_ID" "qa"
 
       - name: Upload QA Manifest
         uses: actions/upload-artifact@v4
         with:
-          name: qa-manifest-${{ matrix.service }}
+          name: qa-manifest-${{ steps.slug.outputs.value }}
           path: /tmp/qa-manifest/

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Multi-stage fat-jar image for auth-service, score-service, session-service.
 # Build: docker build -f docker/Dockerfile.jvm --build-arg MODULE=auth-service .
 
@@ -9,7 +10,11 @@ COPY gradle gradle
 COPY gradlew gradle.properties settings.gradle.kts build.gradle.kts ./
 COPY services ./services
 
-RUN chmod +x gradlew \
+# BuildKit cache mount on GRADLE_USER_HOME so dep jars + wrapper distribution
+# survive across builds. uid/gid match the `gradle` user baked into the base
+# image; `sharing=locked` prevents concurrent matrix jobs from corrupting it.
+RUN --mount=type=cache,target=/home/gradle/.gradle,uid=1000,gid=1000,sharing=locked \
+    chmod +x gradlew \
     && ./gradlew --no-daemon ":${MODULE}:shadowJar"
 
 FROM eclipse-temurin:21-jre-alpine
