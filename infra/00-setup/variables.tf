@@ -11,9 +11,9 @@ variable "qa_bucket_name" {
 }
 
 variable "qa_ami_id" {
-  description = "AMI for QA EC2 instances (must have Docker + SSM agent)"
+  description = "AMI for QA EC2 instances. Must have the SSM agent pre-baked (stock Amazon Linux is fine). Docker + the compose plugin are installed at boot by the user-data bootstrap in qa_ec2.py."
   type        = string
-  default     = "ami-098e39bafa7e7303d" # Amazon Linux x86
+  default     = "ami-098e39bafa7e7303d" # stock Amazon Linux x86 (SSM agent included)
 }
 
 variable "services" {
