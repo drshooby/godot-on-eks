@@ -1,6 +1,9 @@
 gitRepo: https://github.com/drshooboy/godot-on-eks.git
 targetRevision: main
 
+# Set at install time: helm upgrade --install ... --set awsAccountId=123456789012
+awsAccountId: ""
+
 apps:
   - name: platform
   - name: auth-service
@@ -10,6 +13,9 @@ apps:
 
 # Overrides for argo-cd subchart — keep the UI private by default (port-forward or internal LB later).
 argo-cd:
+  crds:
+    install: false          # CRDs are pre-installed by the install script (kubectl apply -k)
+
   global:
     domain: argocd.local
 
