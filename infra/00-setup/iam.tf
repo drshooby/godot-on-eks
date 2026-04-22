@@ -42,6 +42,29 @@ resource "aws_iam_role_policy" "qa_ec2_s3" {
   })
 }
 
+# SSM agent streams Run Command output to CloudWatch when CloudWatchOutputConfig
+# is set. AmazonSSMManagedInstanceCore does NOT grant logs:* — without this
+# policy the stream silently fails and the log group stays empty.
+resource "aws_iam_role_policy" "qa_ec2_logs" {
+  name = "qa-ssm-cw-logs"
+  role = aws_iam_role.qa_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams",
+      ]
+      Resource = [
+        "${aws_cloudwatch_log_group.qa_ssm.arn}:*",
+      ]
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "qa_ec2" {
   name = "qa-ec2"
   role = aws_iam_role.qa_ec2.name

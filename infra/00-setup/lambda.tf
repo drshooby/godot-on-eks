@@ -4,6 +4,14 @@ data "archive_file" "qa_lambda" {
   output_path = "${path.module}/qa_ec2.zip"
 }
 
+# Destination for full SSM Run Command output — SSM's inline response is capped
+# at 24KB, which silently truncates verbose docker compose output. Streaming
+# to CloudWatch gives us the full log regardless of size.
+resource "aws_cloudwatch_log_group" "qa_ssm" {
+  name              = "/aws/ssm/qa-runner"
+  retention_in_days = 14
+}
+
 resource "aws_lambda_function" "qa_runner" {
   function_name    = "qa-runner"
   role             = aws_iam_role.qa_lambda.arn
@@ -20,6 +28,7 @@ resource "aws_lambda_function" "qa_runner" {
       AMI_ID           = var.qa_ami_id
       INSTANCE_PROFILE = aws_iam_instance_profile.qa_ec2.name
       QA_BUCKET        = var.qa_bucket_name
+      SSM_LOG_GROUP    = aws_cloudwatch_log_group.qa_ssm.name
     }
   }
 
