@@ -78,6 +78,7 @@ jobs:
       - name: Build and push
         env:
           AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          GITHUB_SHA: ${{ github.sha }}
         run: ./scripts/build_and_push.sh "${{ matrix.service }}" "$AWS_ID" "qa"
 
       - name: Upload QA Manifest

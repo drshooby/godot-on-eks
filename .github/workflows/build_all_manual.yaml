@@ -32,6 +32,7 @@ jobs:
       - name: Build and Push Services
         env:
           AWS_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           while IFS= read -r dir; do
             [[ -z "$dir" ]] && continue
