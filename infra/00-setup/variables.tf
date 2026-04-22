@@ -13,7 +13,7 @@ variable "qa_bucket_name" {
 variable "qa_ami_id" {
   description = "AMI for QA EC2 instances (must have Docker + SSM agent)"
   type        = string
-  default     = "ami-03e4e59b20d79eeab"
+  default     = "ami-098e39bafa7e7303d" # Amazon Linux x86
 }
 
 variable "services" {
