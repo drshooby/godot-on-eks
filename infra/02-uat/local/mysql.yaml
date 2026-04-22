@@ -1,0 +1,132 @@
+# MySQL for local Docker Desktop testing only.
+# Credentials here are intentionally weak dev defaults — do not use on EKS.
+# The ConfigMap embeds the schema so the DB self-initialises on first boot.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-local-creds
+  namespace: uat
+stringData:
+  MYSQL_ROOT_PASSWORD: local-root
+  MYSQL_DATABASE: fps
+  MYSQL_USER: fps
+  MYSQL_PASSWORD: fps-local
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-migrations
+  namespace: uat
+data:
+  01-schema.sql: |
+    CREATE TABLE IF NOT EXISTS players (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    );
+
+    CREATE TABLE IF NOT EXISTS scores (
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        player_id CHAR(36) NOT NULL,
+        score INT NOT NULL,
+        wave_reached INT NOT NULL,
+        created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+        CONSTRAINT fk_scores_player FOREIGN KEY (player_id) REFERENCES players (id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scores_player ON scores (player_id);
+    CREATE INDEX IF NOT EXISTS idx_scores_score_desc ON scores (score DESC);
+
+    CREATE TABLE IF NOT EXISTS game_sessions (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        player_id CHAR(36) NULL,
+        started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+        ended_at DATETIME(6) NULL,
+        score INT NULL,
+        waves INT NULL,
+        kills INT NULL,
+        CONSTRAINT fk_sessions_player FOREIGN KEY (player_id) REFERENCES players (id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_player_started ON game_sessions (player_id, started_at DESC);
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: uat
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-local-creds
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-local-creds
+                  key: MYSQL_DATABASE
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-local-creds
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-local-creds
+                  key: MYSQL_PASSWORD
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: migrations
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1"]
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 12
+      volumes:
+        - name: migrations
+          configMap:
+            name: mysql-migrations
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: uat
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306

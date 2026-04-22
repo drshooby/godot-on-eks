@@ -19,7 +19,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           ports:
             - containerPort: {{ .Values.service.targetPort }}
-          {{- if .Values.externalSecret.enabled }}
+          {{- if .Values.env.enabled }}
           envFrom:
             - secretRef:
                 name: score-service-env

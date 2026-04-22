@@ -1,0 +1,27 @@
+# Platform chart overrides for local Docker Desktop testing.
+# Gateway gets LoadBalancer IP = localhost from Docker Desktop automatically.
+publicHostname: localhost
+
+gateway:
+  name: uat-public
+  namespace: uat
+  className: eg
+  enableHttpsListener: false
+
+# Skip cert-manager resources (no public DNS, no TLS locally).
+certManager:
+  enabled: false
+
+# Skip ClusterSecretStore (no IRSA / AWS locally).
+externalSecrets:
+  enabled: false
+
+aws:
+  region: us-east-1
+
+acme:
+  email: local@example.com
+  server: https://acme-v02.api.letsencrypt.org/directory
+
+tls:
+  secretName: uat-public-tls

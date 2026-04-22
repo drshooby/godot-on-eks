@@ -13,21 +13,10 @@ module "eks" {
 
   eks_managed_node_groups = {
     primary = {
-      instance_types = ["t3.medium"]
+      instance_types = ["t3.large"]
       min_size       = 2
-      max_size       = 4
+      max_size       = 2
       desired_size   = 2
-
-      additional_security_group_rules = {
-        allow_all_node_to_node = {
-          description              = "Allow all traffic between nodes in the same SG"
-          protocol                 = "-1"
-          from_port                = 0
-          to_port                  = 0
-          type                     = "ingress"
-          source_security_group_id = "self"
-        }
-      }
     }
   }
 
