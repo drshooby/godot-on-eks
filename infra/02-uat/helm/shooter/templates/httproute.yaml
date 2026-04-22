@@ -1,0 +1,32 @@
+{{- if .Values.httpRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shooter-public
+  labels:
+    {{- include "shooter.labels" . | nindent 4 }}
+spec:
+  hostnames:
+    {{- toYaml .Values.httpRoute.hostnames | nindent 4 }}
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: http
+    {{- if .Values.httpRoute.attachHttpsSection }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: https
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: shooter
+          port: {{ .Values.service.port }}
+{{- end }}

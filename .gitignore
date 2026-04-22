@@ -42,3 +42,6 @@ terraform.tfvars.json.json.*
 
 # --- QA ---
 *.zip
+
+# --- Previous infra example ---
+prev-infra-example/
