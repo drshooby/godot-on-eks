@@ -2,6 +2,17 @@
 
 End state and architecture are described in **[`docs/uat-plan.md`](../../docs/uat-plan.md)**. This directory holds **Terraform**, **Argo CD (argo-helm wrapper)**, and **Helm** for UAT.
 
+## Edge architecture
+
+```
+Client → ALB (Terraform, ACM cert) → NodePort → Traefik → Ingress → Service → Pod
+```
+
+- **ALB**, **ACM certificate**, **Route 53 record**, **VPC**, **EKS**, **RDS** — all Terraform-owned. `terraform destroy` cleans everything up with no orphaned ENIs.
+- **Traefik** runs inside the cluster as an **Ingress controller** (`IngressClass: traefik`). On EKS its Service is `NodePort`; the ALB target group forwards to that port. Locally (Docker Desktop) Traefik runs as `LoadBalancer` so it is reachable on `localhost`.
+- **TLS** terminates at the ALB (ACM DNS-validated cert). Traefik speaks plain HTTP internally.
+- App charts expose traffic with standard Kubernetes `Ingress` resources (no Gateway API).
+
 ## Local testing (Docker Desktop)
 
 Use this path to smoke-test the full UAT stack before provisioning EKS. No AWS account needed.
@@ -15,7 +26,7 @@ docker build -f backend/docker/Dockerfile.jvm --build-arg MODULE=session-service
 docker build -f shooter/Dockerfile                                                -t shooter:uat-latest          ./shooter
 ```
 
-**Then run the install script** (sets up everything: Gateway API CRDs, Envoy Gateway, MySQL, secrets, all Helm charts):
+**Then run the install script** (sets up everything: Traefik, MySQL, secrets, all Helm charts):
 
 ```bash
 infra/02-uat/local/install.sh
@@ -25,25 +36,25 @@ The script checks that your `kubectl` context is `docker-desktop` before touchin
 
 **What the script installs:**
 
-| Step                       | Resource                                  | Notes                             |
-| -------------------------- | ----------------------------------------- | --------------------------------- |
-| Namespaces                 | `argocd`, `uat`, `external-secrets`       | from `namespaces.yaml`            |
-| Gateway API CRDs           | v1.2.1 standard install                   |                                   |
-| Envoy Gateway              | v1.3.1 via Helm                           | GatewayClass `eg`                 |
-| MySQL                      | StatefulSet in `uat`                      | schema auto-applied on first boot |
-| App secrets                | `*-env` Secrets in `uat`                  | DB creds + JWT secret             |
-| platform chart             | Gateway (no TLS, no cert-manager, no ESO) |                                   |
-| auth/score/session/shooter | Helm releases in `uat`                    | local images, `env.enabled=true`  |
+| Step                       | Resource                                | Notes                             |
+| -------------------------- | --------------------------------------- | --------------------------------- |
+| Namespaces                 | `argocd`, `uat`, `external-secrets`     | from `namespaces.yaml`            |
+| Traefik                    | Helm release in `traefik`               | `type: LoadBalancer` → localhost  |
+| MySQL                      | StatefulSet in `uat`                    | schema auto-applied on first boot |
+| App secrets                | `*-env` Secrets in `uat`                | DB creds + JWT secret             |
+| platform chart             | ClusterSecretStore disabled locally     |                                   |
+| auth/score/session/shooter | Helm releases in `uat`                  | local images, `env.enabled=true`  |
 
 **Differences from EKS:**
 
-| Local                        | EKS                               |
-| ---------------------------- | --------------------------------- |
-| MySQL StatefulSet in-cluster | RDS MySQL via Terraform           |
-| Plain k8s Secrets            | ExternalSecrets → Secrets Manager |
-| No cert-manager / TLS        | cert-manager + Let's Encrypt      |
-| No Argo CD                   | Full Argo CD ApplicationSet       |
-| `awsAccountId` not needed    | Pass at `helm upgrade --install`  |
+| Local                        | EKS                                     |
+| ---------------------------- | --------------------------------------- |
+| MySQL StatefulSet in-cluster | RDS MySQL via Terraform                 |
+| Plain k8s Secrets            | ExternalSecrets → Secrets Manager       |
+| Traefik `LoadBalancer`       | Traefik `NodePort` + Terraform ALB      |
+| No TLS                       | ACM cert on ALB (Let's Encrypt-free)    |
+| No Argo CD                   | Full Argo CD ApplicationSet             |
+| `awsAccountId` not needed    | Pass at `helm upgrade --install`        |
 
 **Tear down:**
 
@@ -57,7 +68,7 @@ infra/02-uat/local/teardown.sh
 
 ### 1. Terraform
 
-Provisions VPC, EKS, RDS MySQL, Route 53, and IRSA. ECR repos are created in `infra/00-setup`.
+Provisions VPC, EKS, RDS MySQL, Route 53 zone + record, ACM cert, ALB + target group, IRSA for External Secrets. ECR repos live in `infra/00-setup`.
 
 ```bash
 cd infra/02-uat/terraform
@@ -65,7 +76,7 @@ terraform init
 terraform apply
 ```
 
-Delegate the child zone NS records at Cloudflare:
+Delegate the child zone NS records at Cloudflare **before the first apply completes** — ACM DNS validation hangs otherwise:
 
 ```bash
 terraform output route53_child_zone_name_servers
@@ -79,7 +90,7 @@ eval "$(terraform output -raw configure_kubectl)"
 
 ### 2. Install script
 
-The install script reads Terraform outputs and sets up everything on the cluster:
+The install script reads Terraform outputs (cluster name, account id, IRSA ARN, Traefik NodePort) and sets up the cluster:
 
 ```bash
 infra/02-uat/eks/install.sh
@@ -90,39 +101,26 @@ infra/02-uat/eks/install.sh
 | Step | Resource | Notes |
 |------|----------|-------|
 | Namespaces | `argocd`, `uat`, `external-secrets` | from `namespaces.yaml` |
-| Envoy Gateway | v1.3.1 via Helm | includes Gateway API CRDs + GatewayClass `eg` |
-| cert-manager | v1.17.2 via Helm | for Let’s Encrypt TLS |
+| Traefik | v34.x via Helm | `NodePort` matching the Terraform ALB target group; registers `IngressClass: traefik` |
 | External Secrets Operator | latest via Helm | IRSA-annotated from Terraform output |
 | Argo CD | v7.8.8 (argo-helm) | `awsAccountId` injected from Terraform |
 
-Argo CD’s **ApplicationSet** then deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
+Argo CD's **ApplicationSet** then deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
 - `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
 - `env.enabled` = true (mount `<service>-env` Secret)
 - `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)
 
 ### 3. Post-install
 
-1. **Wait for Gateway LB address:**
-   ```bash
-   kubectl get gateway uat-public -n uat -w
-   ```
-
-2. **Update Terraform** with the LB DNS for the Route 53 alias, then re-apply:
-   ```bash
-   terraform -chdir=infra/02-uat/terraform apply \
-     -var uat_gateway_lb_dns_name=<LB_DNS> \
-     -var uat_gateway_lb_hosted_zone_id=<LB_ZONE_ID>
-   ```
-
-3. **Enable HTTPS** after the TLS Certificate is Ready (`kubectl get certificate -n uat`):
-   Set `gateway.enableHttpsListener: true` in the platform chart and re-sync via Argo.
+1. **Check Argo apps sync:** `kubectl get applications -n argocd`
+2. **Confirm ALB target group has healthy targets** (`aws elbv2 describe-target-health ...`).
+3. **Verify:** `curl -vI https://$(terraform output -raw uat_fqdn)` — valid cert, 200/30x from shooter.
 
 **Argo CD UI:**
 
 ```bash
 kubectl port-forward svc/argo-cd-argocd-server -n argocd 8080:443
-# admin password:
-kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath=’{.data.password}’ | base64 -d
+kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
 ```
 
 **Tear down** (Kubernetes resources only — Terraform infra stays):
@@ -130,6 +128,8 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath=’{.data.p
 ```bash
 infra/02-uat/eks/teardown.sh
 ```
+
+Then `terraform -chdir=infra/02-uat/terraform destroy` removes the ALB, ACM cert, Route 53 record, RDS, EKS, and VPC in one go. No more subnet/IGW dependency hangs.
 
 ---
 

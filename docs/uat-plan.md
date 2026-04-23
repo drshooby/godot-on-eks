@@ -1,5 +1,7 @@
 # UAT: Terraform, GitOps (Argo CD), DNS, SSL
 
+> **Status (see [`infra/02-uat/README.md`](../infra/02-uat/README.md) for current state):** the Gateway API / Envoy Gateway + cert-manager path below was **superseded by issue #16** in favor of a **Terraform-managed ALB + ACM cert + Traefik `Ingress` controller**. The destroy-ordering rationale and open decisions are kept for history; treat sections referencing `GatewayClass` / `HTTPRoute` / cert-manager as design notes, not the shipped implementation.
+
 Editable plan. Promotion uses `infra/01-run-qa/setup/tag_uat.sh` (not `prev-infra-example` scripts). K8s patterns: `prev-infra-example/infra/02-uat/`. **Apps** ship as **small Helm charts** (committed `Chart.yaml` + `values.yaml` + `templates/`) so you can diff and edit in git. **Argo CD** may be installed with the **official `argo-helm` chart** — the important part is **checked-in** `Chart.yaml` (or `umbrella` wrapper) and **`values.yaml`** (and any `values-uat.yaml` override), not a one-off `helm repo add` with no files in the repo.
 
 ### UAT public hostname (**Cloudflare** registrar + **Route 53** for UAT + certs + HTTPRoute)
