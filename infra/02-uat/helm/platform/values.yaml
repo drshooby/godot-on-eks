@@ -1,17 +1,7 @@
-publicHostname: uat.shmup.ettukube.com
-
-gateway:
-  name: uat-public
-  namespace: uat
-  # Envoy Gateway (helm install) registers this GatewayClass by default.
-  className: eg
-  # After Certificate has issued and Secret `tls.secretName` exists, set this true and re-sync
-  # so the HTTPS listener can terminate TLS without failing admission.
-  enableHttpsListener: false
-
-certManager:
-  # Set false to skip ClusterIssuer and Certificate (e.g. local/Docker Desktop).
-  enabled: true
+# Platform chart: cluster-wide wiring for UAT.
+# TLS now terminates at the Terraform-managed ALB with an ACM cert, so there is
+# no cert-manager / ClusterIssuer / Certificate / Gateway here. Edge routing
+# lives in Traefik (installed by install.sh) and per-app Ingress resources.
 
 externalSecrets:
   # Set false to skip ClusterSecretStore (e.g. local/Docker Desktop, no IRSA).
@@ -19,10 +9,3 @@ externalSecrets:
 
 aws:
   region: us-east-1
-
-acme:
-  email: ops@example.com
-  server: https://acme-v02.api.letsencrypt.org/directory
-
-tls:
-  secretName: uat-public-tls

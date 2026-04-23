@@ -18,18 +18,9 @@ echo "==> Deleting namespaces (uat, external-secrets)..."
 kubectl delete namespace uat external-secrets --ignore-not-found
 
 echo ""
-echo "==> Removing Envoy Gateway..."
-helm uninstall eg -n envoy-gateway-system 2>/dev/null && echo "  eg removed" || echo "  eg not found (skipped)"
-kubectl delete namespace envoy-gateway-system --ignore-not-found
-
-echo ""
-echo "==> Removing Gateway API CRDs..."
-kubectl delete crd gatewayclasses.gateway.networking.k8s.io \
-  gateways.gateway.networking.k8s.io \
-  grpcroutes.gateway.networking.k8s.io \
-  httproutes.gateway.networking.k8s.io \
-  referencegrants.gateway.networking.k8s.io \
-  --ignore-not-found
+echo "==> Removing Traefik..."
+helm uninstall traefik -n traefik 2>/dev/null && echo "  traefik removed" || echo "  traefik not found (skipped)"
+kubectl delete namespace traefik --ignore-not-found
 
 echo ""
 echo "Done. Cluster is clean."

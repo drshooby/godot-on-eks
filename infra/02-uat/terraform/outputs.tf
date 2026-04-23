@@ -20,7 +20,7 @@ output "configure_kubectl" {
 }
 
 output "uat_fqdn" {
-  description = "Public UAT hostname (Helm / cert-manager / HTTPRoute)"
+  description = "Public UAT hostname (Ingress / ACM / Route53 record)"
   value       = var.uat_fqdn
 }
 
@@ -38,9 +38,29 @@ output "route53_child_zone_name_servers" {
   value       = aws_route53_zone.child.name_servers
 }
 
-output "uat_alias_record_created" {
-  description = "Whether the A/ALIAS for uat_fqdn was created (requires gateway LB variables)."
-  value       = local.create_uat_alias
+output "alb_dns_name" {
+  description = "Public DNS name of the UAT ALB (what uat_fqdn aliases to)."
+  value       = aws_lb.uat.dns_name
+}
+
+output "alb_zone_id" {
+  description = "Canonical hosted zone ID for the ALB."
+  value       = aws_lb.uat.zone_id
+}
+
+output "acm_certificate_arn" {
+  description = "ACM certificate ARN used by the ALB HTTPS listener."
+  value       = aws_acm_certificate.uat.arn
+}
+
+output "traefik_target_group_name" {
+  description = "Target group name the ALB forwards to (Traefik NodePort)."
+  value       = aws_lb_target_group.traefik.name
+}
+
+output "traefik_http_nodeport" {
+  description = "NodePort the Traefik HTTP entrypoint must bind to (install.sh passes this to the Helm release)."
+  value       = var.traefik_http_nodeport
 }
 
 output "rds_endpoint" {
@@ -65,9 +85,4 @@ output "aws_region" {
 output "ecr_image_prefix" {
   description = "Default ECR pull URL prefix for this account/region"
   value       = "${local.account_id}.dkr.ecr.${local.region}.amazonaws.com"
-}
-
-output "acme_email" {
-  description = "Copy into infra/02-uat/helm/platform values acme.email (Let's Encrypt registration)."
-  value       = var.acme_email
 }

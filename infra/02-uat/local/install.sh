@@ -15,9 +15,7 @@
 #   docker build -f shooter/Dockerfile                                                -t shooter:uat-latest          ./shooter
 #
 # To tear everything down:
-#   kubectl delete namespace uat external-secrets
-#   helm uninstall eg -n envoy-gateway-system
-#   kubectl delete namespace envoy-gateway-system
+#   infra/02-uat/local/teardown.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -38,29 +36,22 @@ echo ""
 echo "==> Applying namespaces..."
 kubectl apply -f "$UAT_DIR/namespaces.yaml"
 
-# ── 2. Envoy Gateway (includes Gateway API CRDs) ─────────────────────────────
-# The Helm chart bundles Gateway API CRDs, so no separate CRD install is needed.
-# Installing CRDs separately causes field-manager conflicts — let Helm own them.
+# ── 2. Traefik ingress controller ────────────────────────────────────────────
+# Locally Traefik runs as LoadBalancer so Docker Desktop exposes it on
+# localhost. On EKS the service is NodePort behind a Terraform-managed ALB.
 echo ""
-echo "==> Installing Envoy Gateway (v1.3.1)..."
-helm upgrade --install eg \
-  oci://docker.io/envoyproxy/gateway-helm \
-  --version v1.3.1 \
-  -n envoy-gateway-system \
+echo "==> Installing Traefik (v34.x)..."
+helm repo add traefik https://traefik.github.io/charts --force-update
+helm upgrade --install traefik traefik/traefik \
+  --version 34.2.0 \
+  -n traefik \
   --create-namespace \
+  --set "service.type=LoadBalancer" \
+  --set "ports.web.redirectTo=null" \
+  --set "ingressClass.enabled=true" \
+  --set "ingressClass.isDefaultClass=true" \
+  --set "ingressClass.name=traefik" \
   --wait
-
-# Envoy Gateway bundles the GatewayClass with its CRDs, but on upgrades it can
-# go missing. Apply it explicitly so the script is idempotent.
-echo "Ensuring GatewayClass 'eg' exists..."
-kubectl apply -f - <<'GWCLASS'
-apiVersion: gateway.networking.k8s.io/v1
-kind: GatewayClass
-metadata:
-  name: eg
-spec:
-  controllerName: gateway.envoyproxy.io/gatewayclass-controller
-GWCLASS
 
 # ── 3. MySQL ─────────────────────────────────────────────────────────────────
 echo ""
@@ -89,7 +80,7 @@ for SVC in auth-service score-service session-service; do
     --dry-run=client -o yaml | kubectl apply -f -
 done
 
-# ── 5. Platform chart ────────────────────────────────────────────────────────
+# ── 5. Platform chart (ClusterSecretStore only; skipped locally) ─────────────
 echo ""
 echo "==> Installing platform chart..."
 helm upgrade --install platform "$UAT_DIR/helm/platform" \
@@ -115,14 +106,14 @@ helm upgrade --install shooter "$UAT_DIR/helm/shooter" \
   -n uat \
   --set image.repository=shooter \
   --set image.tag=uat-latest \
-  --set httpRoute.hostnames[0]=localhost \
+  --set ingress.hosts[0]=localhost \
   --wait
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-echo "Done. Gateway LoadBalancer should be reachable at http://localhost"
+echo "Done. Traefik LoadBalancer should be reachable at http://localhost"
 echo ""
 echo "Check pod status:      kubectl get pods -n uat"
-echo "Check gateway:         kubectl get gateway -n uat"
-echo "Check HTTPRoute:       kubectl get httproute -n uat"
+echo "Check Traefik:         kubectl get svc -n traefik"
+echo "Check Ingress:         kubectl get ingress -n uat"
 echo "Shooter logs:          kubectl logs -n uat -l app.kubernetes.io/name=shooter"

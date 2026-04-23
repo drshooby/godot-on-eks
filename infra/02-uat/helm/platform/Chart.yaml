@@ -1,6 +1,6 @@
 apiVersion: v2
 name: uat-platform
-description: UAT shared Gateway (Gateway API), Let's Encrypt issuer, IRSA-friendly ClusterSecretStore
+description: UAT platform wiring — IRSA-friendly ClusterSecretStore for External Secrets (TLS + edge routing live on Terraform ALB + Traefik)
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

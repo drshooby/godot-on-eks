@@ -9,12 +9,10 @@ service:
   port: 80
   targetPort: 80
 
-httpRoute:
+ingress:
   enabled: true
-  hostnames:
+  # Traefik registers this IngressClass. Overridable for other controllers.
+  className: traefik
+  hosts:
     - uat.shmup.ettukube.com
-  attachHttpsSection: false
-
-gateway:
-  name: uat-public
-  namespace: uat
+  annotations: {}
