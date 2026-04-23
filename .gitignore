@@ -45,3 +45,5 @@ terraform.tfvars.json.json.*
 
 # --- Previous infra example ---
 prev-infra-example/
+# --- Git worktrees ---
+.worktrees/
