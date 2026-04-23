@@ -1,6 +1,6 @@
 # UAT — see docs/uat-plan.md
 # ettukube.com is registered in Cloudflare; you add NS delegation for the Route 53 child zone (e.g. shmup.ettukube.com).
-# UAT: aws_route53_record for uat_fqdn → Gateway/LB. This is also the hostname in Helm / cert-manager / HTTPRoute.
+# UAT record: aws_route53_record for uat_fqdn → Terraform-managed ALB. This is also the hostname in Helm / Ingress.
 
 variable "aws_region" {
   description = "AWS region for UAT"
@@ -9,7 +9,7 @@ variable "aws_region" {
 }
 
 variable "uat_fqdn" {
-  description = "FQDN for UAT (Route 53 record name, cert-manager, HTTPRoute hosts). Must be a hostname under route53_child_zone_name."
+  description = "FQDN for UAT (Route 53 record, ACM cert, Ingress hosts). Must be a hostname under route53_child_zone_name."
   type        = string
   default     = "uat.shmup.ettukube.com"
 }
@@ -71,22 +71,10 @@ variable "tags" {
   }
 }
 
-variable "uat_gateway_lb_dns_name" {
-  description = "After installing Envoy Gateway (or your Gateway API controller), set this to the public load balancer DNS name for the UAT alias record. Leave empty on first apply; update and re-apply once the LB exists."
-  type        = string
-  default     = ""
-}
-
-variable "uat_gateway_lb_hosted_zone_id" {
-  description = "Route 53 canonical hosted zone ID for the load balancer (depends on LB type). Required when uat_gateway_lb_dns_name is set."
-  type        = string
-  default     = ""
-}
-
-variable "acme_email" {
-  description = "Email for Let's Encrypt / cert-manager ACME registration (passed to Helm values)."
-  type        = string
-  default     = "ops@example.com"
+variable "traefik_http_nodeport" {
+  description = "NodePort that Traefik's HTTP entrypoint listens on (ALB target group forwards here). Must match the Helm install."
+  type        = number
+  default     = 30080
 }
 
 variable "db_instance_class" {
