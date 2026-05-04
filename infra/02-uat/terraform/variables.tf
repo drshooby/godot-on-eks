@@ -72,20 +72,9 @@ variable "tags" {
 }
 
 variable "ingress_http_nodeport" {
-  description = "NodePort that the in-cluster ingress controller (Traefik or Kong) HTTP entrypoint listens on. The ALB target group forwards here, and install.sh passes this value to the Helm release so the controller binds the matching port. Renamed from traefik_http_nodeport."
+  description = "NodePort that Kong's HTTP proxy listens on. The ALB target group forwards here, and install.sh passes this value to the Helm release so Kong binds the matching port."
   type        = number
   default     = 30080
-}
-
-variable "ingress_controller" {
-  description = "Which ingress controller install.sh / helm install. Drives the ingressClassName on app Ingress resources via the Argo CD ApplicationSet. The ALB target group port is the same NodePort either way (var.ingress_http_nodeport), so switching controllers does not require a Terraform apply."
-  type        = string
-  default     = "traefik"
-
-  validation {
-    condition     = contains(["traefik", "kong"], var.ingress_controller)
-    error_message = "ingress_controller must be either \"traefik\" or \"kong\"."
-  }
 }
 
 variable "db_instance_class" {

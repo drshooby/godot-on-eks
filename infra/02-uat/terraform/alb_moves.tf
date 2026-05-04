@@ -1,6 +1,6 @@
-# Remap Terraform state after renaming ingress edge resources (*traefik* → *ingress*).
-# Updating the AWS target group `name` still forces TG replacement — `moved` only
-# rewrites addresses in state before diffing.
+# `moved` addresses below are legacy Terraform resource names from before the
+# ALB target group was renamed to *ingress*; do not change `from` — they must
+# match addresses already in state.
 
 moved {
   from = aws_lb_target_group.traefik

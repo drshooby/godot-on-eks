@@ -11,13 +11,10 @@ service:
 
 ingress:
   enabled: true
-  # IngressClass to attach to. Must match whichever controller install.sh
-  # actually installed:
-  #   - "traefik" (default) — registered by the Traefik Helm release
-  #   - "kong"              — registered by the Kong Helm release
+  # IngressClass to attach to. Must match Kong (installed by install.sh).
   # On EKS this is overridden by the Argo CD ApplicationSet from
   # infra/02-uat/argocd/values.yaml (ingressClassName).
-  className: traefik
+  className: kong
   hosts:
     - uat.shmup.ettukube.com
   # Free-form annotations forwarded to the Ingress. Kong-specific examples:

@@ -5,17 +5,14 @@ End state and architecture are described in **[`docs/uat-plan.md`](../../docs/ua
 ## Edge architecture
 
 ```
-Client → ALB (Terraform, ACM cert) → NodePort → Ingress controller → Ingress → Service → Pod
-                                                 (Traefik | Kong)
+Client → ALB (Terraform, ACM cert) → NodePort → Kong → Ingress → Service → Pod
 ```
 
 - **ALB**, **ACM certificate**, **Route 53 record**, **VPC**, **EKS**, **RDS** — all Terraform-owned. `terraform destroy` cleans everything up with no orphaned ENIs.
-- **Ingress controller** runs inside the cluster. Pick one with `var.ingress_controller` (Terraform) or `INGRESS_CONTROLLER` (install scripts):
-  - `traefik` (default, `IngressClass: traefik`) — installed via `traefik/traefik` chart v34.2.0.
-  - `kong` (`IngressClass: kong`) — installed via `kong/kong` chart v3.2.0, DB-less, ingress-controller mode, CRDs included.
-- On EKS the controller Service is `NodePort` on `var.ingress_http_nodeport` (default 30080); the ALB target group forwards to that port. The port is **shared** between Traefik and Kong, so swapping controllers does **not** require `terraform apply` — uninstall one Helm release, install the other (`INGRESS_CONTROLLER=kong infra/02-uat/eks/install.sh`), and re-sync app charts so they pick up the new `ingressClassName`.
-- Locally (Docker Desktop) the controller runs as `LoadBalancer` so it is reachable on `localhost`.
-- **TLS** terminates at the ALB (ACM DNS-validated cert). The ingress controller speaks plain HTTP internally.
+- **Kong** runs inside the cluster as the ingress controller (`IngressClass: kong`), installed via the `kong/kong` Helm chart (v3.2.0), DB-less, ingress-controller mode, CRDs included.
+- On EKS Kong's proxy Service is `NodePort` on `var.ingress_http_nodeport` (default 30080); the ALB target group forwards to that port.
+- Locally (Docker Desktop) Kong runs as `LoadBalancer` so it is reachable on `localhost`.
+- **TLS** terminates at the ALB (ACM DNS-validated cert). Kong speaks plain HTTP internally.
 - App charts expose traffic with standard Kubernetes `Ingress` resources (no Gateway API). The `ingressClassName` is configurable per chart (`ingress.className`); the Argo CD ApplicationSet propagates a single top-level `ingressClassName` value to every app.
 
 ## Local testing (Docker Desktop)
@@ -31,12 +28,10 @@ docker build -f backend/docker/Dockerfile.jvm --build-arg MODULE=session-service
 docker build -f shooter/Dockerfile                                                -t shooter:uat-latest          ./shooter
 ```
 
-**Then run the install script** (sets up everything: ingress controller, MySQL, secrets, all Helm charts):
+**Then run the install script** (sets up everything: Kong, MySQL, secrets, all Helm charts):
 
 ```bash
 infra/02-uat/local/install.sh
-# or, try Kong instead of the default Traefik:
-INGRESS_CONTROLLER=kong infra/02-uat/local/install.sh
 ```
 
 The script checks that your `kubectl` context is `docker-desktop` before touching anything. Once complete, the shooter game is reachable at **http://localhost**.
@@ -46,7 +41,7 @@ The script checks that your `kubectl` context is `docker-desktop` before touchin
 | Step                       | Resource                                | Notes                             |
 | -------------------------- | --------------------------------------- | --------------------------------- |
 | Namespaces                 | `argocd`, `uat`, `external-secrets`     | from `namespaces.yaml`            |
-| Ingress controller         | Helm release in `traefik` or `kong`     | `type: LoadBalancer` → localhost; pick with `INGRESS_CONTROLLER` env (default `traefik`) |
+| Ingress controller         | Helm release in `kong`                  | `type: LoadBalancer` → localhost      |
 | MySQL                      | StatefulSet in `uat`                    | schema auto-applied on first boot |
 | App secrets                | `*-env` Secrets in `uat`                | DB creds + JWT secret             |
 | platform chart             | ClusterSecretStore disabled locally     |                                   |
@@ -97,12 +92,10 @@ eval "$(terraform output -raw configure_kubectl)"
 
 ### 2. Install script
 
-The install script reads Terraform outputs (cluster name, account id, IRSA ARN, ingress NodePort, ingress controller selection) and sets up the cluster:
+The install script reads Terraform outputs (cluster name, account id, IRSA ARN, Kong NodePort) and sets up the cluster:
 
 ```bash
 infra/02-uat/eks/install.sh
-# or, override the controller without re-applying Terraform:
-INGRESS_CONTROLLER=kong infra/02-uat/eks/install.sh
 ```
 
 **What it installs (in order):**
@@ -110,25 +103,11 @@ INGRESS_CONTROLLER=kong infra/02-uat/eks/install.sh
 | Step | Resource | Notes |
 |------|----------|-------|
 | Namespaces | `argocd`, `uat`, `external-secrets` | from `namespaces.yaml` |
-| Ingress controller | Traefik v34.2.0 *or* Kong v3.2.0 via Helm | `NodePort` (`var.ingress_http_nodeport`, default 30080) matching the Terraform ALB target group. Registers `IngressClass: traefik` or `IngressClass: kong`. Selected by `INGRESS_CONTROLLER` env (defaults to `terraform output ingress_controller`, default `traefik`). |
+| Ingress controller | Kong v3.2.0 via Helm | `NodePort` (`var.ingress_http_nodeport`, default 30080) matching the Terraform ALB target group. Registers `IngressClass: kong`. |
 | External Secrets Operator | latest via Helm | IRSA-annotated from Terraform output |
 | Argo CD | v7.8.8 (argo-helm) | `awsAccountId` and `ingressClassName` injected from Terraform / install flag |
 
-### Switching ingress controllers
-
-Both controllers bind the same NodePort (`var.ingress_http_nodeport`, default 30080) and the ALB target group health check accepts 200–404, so the Terraform-managed edge does not change when swapping. To switch from Traefik to Kong:
-
-```bash
-# 1. (Optional) record intent in Terraform so future runs default to Kong:
-#    set ingress_controller = "kong" in terraform.tfvars and `terraform apply`.
-# 2. Uninstall the current controller:
-helm uninstall traefik -n traefik
-# 3. Install the other one and re-render Argo CD with the new ingressClassName:
-INGRESS_CONTROLLER=kong infra/02-uat/eks/install.sh
-# 4. Argo will re-sync app Ingress resources with ingressClassName=kong.
-```
-
-Argo CD's **ApplicationSet** then deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
+Argo CD's **ApplicationSet** deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
 - `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
 - `env.enabled` = true (mount `<service>-env` Secret)
 - `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)

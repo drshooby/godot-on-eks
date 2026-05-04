@@ -1,7 +1,7 @@
 # Platform chart: cluster-wide wiring for UAT.
 # TLS now terminates at the Terraform-managed ALB with an ACM cert, so there is
 # no cert-manager / ClusterIssuer / Certificate / Gateway here. Edge routing
-# lives in Traefik (installed by install.sh) and per-app Ingress resources.
+# lives in Kong (installed by install.sh) and per-app Ingress resources.
 
 externalSecrets:
   # Set false to skip ClusterSecretStore (e.g. local/Docker Desktop, no IRSA).
