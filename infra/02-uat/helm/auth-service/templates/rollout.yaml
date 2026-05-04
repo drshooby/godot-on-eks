@@ -1,12 +1,13 @@
-{{- if not .Values.rollout.enabled }}
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: auth-service
   labels:
     {{- include "auth-service.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.rollout.revisionHistoryLimit | default 3 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: auth-service
@@ -33,4 +34,19 @@ spec:
             httpGet:
               path: /health
               port: {{ .Values.service.targetPort }}
+  strategy:
+    blueGreen:
+      activeService: auth-service
+      previewService: auth-service-preview
+      autoPromotionEnabled: {{ .Values.rollout.autoPromotionEnabled | default false }}
+      scaleDownDelaySeconds: {{ .Values.rollout.scaleDownDelaySeconds | default 30 }}
+      # prePromotionAnalysis / postPromotionAnalysis are intentionally omitted.
+      # Wire AnalysisTemplate references here once analysis templates exist
+      # (e.g. /health probe over preview Service, error-rate from metrics).
+      # prePromotionAnalysis:
+      #   templates:
+      #     - templateName: smoke-health
+      # postPromotionAnalysis:
+      #   templates:
+      #     - templateName: error-rate
 {{- end }}

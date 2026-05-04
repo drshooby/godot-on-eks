@@ -93,7 +93,20 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
   --set "extraEnv[2].value=$AWS_REGION" \
   --wait
 
-# ── 4. Argo CD ───────────────────────────────────────────────────────────────
+# ── 4. Argo Rollouts controller ──────────────────────────────────────────────
+# Provides the argoproj.io/v1alpha1 Rollout CRD + controller. Charts opt in
+# per-service via `--set rollout.enabled=true` (see infra/02-uat/helm/<svc>/
+# values.yaml and the "Production promotion" section of the README).
+echo ""
+echo "==> Installing Argo Rollouts (v2.40.x)..."
+helm repo add argo https://argoproj.github.io/argo-helm --force-update
+helm upgrade --install argo-rollouts argo/argo-rollouts \
+  --version 2.40.0 \
+  -n argo-rollouts \
+  --set installCRDs=true \
+  --wait
+
+# ── 5. Argo CD ───────────────────────────────────────────────────────────────
 echo ""
 echo "==> Installing Argo CD CRDs..."
 kubectl apply -k "https://github.com/argoproj/argo-cd/manifests/crds?ref=v2.14.11"

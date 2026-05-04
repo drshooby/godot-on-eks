@@ -17,3 +17,12 @@ env:
 externalSecret:
   enabled: false
   remoteKey: uat/auth-service
+
+# Argo Rollouts blue/green strategy. When enabled, the chart renders an
+# argoproj.io/v1alpha1 Rollout (and a <name>-preview Service) instead of
+# the standard apps/v1 Deployment. Default off — opt in for prod promotion.
+rollout:
+  enabled: false
+  autoPromotionEnabled: false
+  scaleDownDelaySeconds: 30
+  revisionHistoryLimit: 3

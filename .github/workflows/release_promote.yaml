@@ -1,0 +1,164 @@
+name: Release Promote (UAT → Prod)
+
+# Triggered by semver release tags (e.g. v1.2.3).
+#
+# Flow:
+#   1. tag v* pushed
+#   2. retag-uat-to-prod retags each service's current `uat-latest` ECR image
+#      to `prod-<version>` and `prod-latest` (no rebuild — pure ECR manifest copy)
+#   3. promote-prod runs only after a reviewer approves the `production`
+#      GitHub Environment, then bumps `infra/02-uat/argocd/values-prod.yaml`
+#      and pushes the bump so Argo CD re-syncs the apps onto the new tag.
+#      Argo Rollouts (blueGreen) handles the cutover; final promotion is
+#      manual via `kubectl argo rollouts promote <name>`.
+#
+# Setup required before this workflow can succeed:
+#   - GitHub Environment named `production` with required reviewer(s).
+#     Docs: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#required-reviewers
+#   - Repo secrets: AWS_ROLE_TO_ASSUME, AWS_ACCOUNT_ID, PAT (matches existing workflows).
+#
+# Scope note: there is no dedicated prod EKS cluster yet. The current UAT
+# cluster doubles as the promotion target so the mechanism can be exercised
+# end-to-end. A separate prod cluster (`infra/03-prod`) is tracked as a
+# follow-up issue.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver tag to promote (e.g. v1.2.3). Leave empty to use the triggering tag.'
+        required: false
+
+env:
+  AWS_REGION: us-east-1
+  SERVICES: auth-service score-service session-service shooter
+
+jobs:
+  retag-uat-to-prod:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Refusing to promote non-semver ref: $VERSION" >&2
+            exit 1
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Promoting $VERSION"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Retag uat-latest → prod-<version> + prod-latest
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          for SVC in $SERVICES; do
+            echo "::group::$SVC"
+            echo "Fetching manifest for $SVC:uat-latest..."
+            MANIFEST=$(aws ecr batch-get-image \
+              --repository-name "$SVC" \
+              --image-ids imageTag=uat-latest \
+              --query 'images[].imageManifest' \
+              --output text \
+              --region "$AWS_REGION")
+
+            if [[ -z "$MANIFEST" || "$MANIFEST" == "None" ]]; then
+              echo "::error::No uat-latest image found for $SVC"
+              exit 1
+            fi
+
+            for TAG in "prod-${VERSION}" "prod-latest"; do
+              echo "Tagging $SVC as $TAG"
+              aws ecr batch-delete-image \
+                --repository-name "$SVC" \
+                --image-ids imageTag="$TAG" \
+                --region "$AWS_REGION" >/dev/null 2>&1 || true
+              aws ecr put-image \
+                --repository-name "$SVC" \
+                --image-tag "$TAG" \
+                --image-manifest "$MANIFEST" \
+                --region "$AWS_REGION" >/dev/null
+            done
+            echo "::endgroup::"
+          done
+
+  promote-prod:
+    needs: retag-uat-to-prod
+    runs-on: ubuntu-latest
+    environment:
+      # Required-reviewer gate. Configure reviewers under
+      # Settings → Environments → production. Docs:
+      # https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#required-reviewers
+      name: production
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Bump prod tag in values-prod.yaml
+        env:
+          VERSION: ${{ needs.retag-uat-to-prod.outputs.version }}
+        run: |
+          set -euo pipefail
+          FILE="infra/02-uat/argocd/values-prod.yaml"
+          mkdir -p "$(dirname "$FILE")"
+          PROD_TAG="prod-${VERSION}"
+          # Idempotent generation; ApplicationSet consumers can layer this on top
+          # of values.yaml when targeting the prod-tagged image set.
+          cat > "$FILE" <<EOF
+          # Auto-generated by .github/workflows/release_promote.yaml
+          # Version: ${VERSION}
+          # Apply to UAT cluster apps (the current promotion target — see
+          # README "Production promotion") to roll out the prod-tagged images
+          # via Argo Rollouts blueGreen.
+          imageTag: "${PROD_TAG}"
+          rollout:
+            enabled: true
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          if git diff --cached --quiet; then
+            echo "No values-prod.yaml change for ${VERSION}"
+            exit 0
+          fi
+          git commit -m "chore(release): promote ${VERSION} to prod tag"
+          git push origin HEAD:main
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.retag-uat-to-prod.outputs.version }}
+        run: |
+          {
+            echo "### Promotion ${VERSION}"
+            echo ""
+            echo "- ECR retagged: \`prod-${VERSION}\`, \`prod-latest\`"
+            echo "- Committed \`infra/02-uat/argocd/values-prod.yaml\`"
+            echo "- Argo CD will sync apps; Argo Rollouts blueGreen handles cutover"
+            echo "- Manual cutover: \`kubectl argo rollouts promote <service>\` per service"
+          } >> "$GITHUB_STEP_SUMMARY"
