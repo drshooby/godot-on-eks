@@ -54,12 +54,8 @@ resource "aws_lb" "uat" {
   tags = var.tags
 }
 
-resource "aws_lb_target_group" "traefik" {
-  # Resource name and AWS target-group name kept as "<cluster>-traefik" for
-  # state stability across the Kong-alternative migration. Logically this is
-  # the ingress-controller target group (Traefik OR Kong) — see
-  # var.ingress_controller and the ingress_target_group_name output.
-  name        = "${var.uat_cluster_name}-traefik"
+resource "aws_lb_target_group" "ingress" {
+  name        = "${var.uat_cluster_name}-ingress"
   port        = var.ingress_http_nodeport
   protocol    = "HTTP"
   target_type = "instance"
@@ -84,11 +80,11 @@ resource "aws_lb_target_group" "traefik" {
 
 # Attach every EKS managed-node-group ASG to the target group so new nodes
 # register automatically.
-resource "aws_autoscaling_attachment" "nodes_to_traefik" {
+resource "aws_autoscaling_attachment" "nodes_to_ingress" {
   for_each = toset(module.eks.eks_managed_node_groups["primary"].node_group_autoscaling_group_names)
 
   autoscaling_group_name = each.value
-  lb_target_group_arn    = aws_lb_target_group.traefik.arn
+  lb_target_group_arn    = aws_lb_target_group.ingress.arn
 }
 
 resource "aws_lb_listener" "http" {
@@ -115,6 +111,6 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.traefik.arn
+    target_group_arn = aws_lb_target_group.ingress.arn
   }
 }

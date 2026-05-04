@@ -55,13 +55,13 @@ output "acm_certificate_arn" {
 
 output "ingress_target_group_name" {
   description = "Target group name the ALB forwards to (ingress-controller NodePort, Traefik or Kong)."
-  value       = aws_lb_target_group.traefik.name
+  value       = aws_lb_target_group.ingress.name
 }
 
 # Backward-compat alias — old name kept so existing scripts/docs keep working.
 output "traefik_target_group_name" {
   description = "Deprecated alias for ingress_target_group_name."
-  value       = aws_lb_target_group.traefik.name
+  value       = aws_lb_target_group.ingress.name
 }
 
 output "ingress_http_nodeport" {
