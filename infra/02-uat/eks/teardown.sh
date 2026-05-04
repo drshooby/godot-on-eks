@@ -15,12 +15,13 @@ echo "==> Removing External Secrets Operator..."
 helm uninstall external-secrets -n external-secrets 2>/dev/null && echo "  external-secrets removed" || echo "  external-secrets not found (skipped)"
 
 echo ""
-echo "==> Removing Traefik..."
+echo "==> Removing ingress controllers (Traefik and/or Kong)..."
 helm uninstall traefik -n traefik 2>/dev/null && echo "  traefik removed" || echo "  traefik not found (skipped)"
+helm uninstall kong    -n kong    2>/dev/null && echo "  kong removed"    || echo "  kong not found (skipped)"
 
 echo ""
 echo "==> Deleting namespaces..."
-kubectl delete namespace uat argocd external-secrets traefik --ignore-not-found
+kubectl delete namespace uat argocd external-secrets traefik kong --ignore-not-found
 
 echo ""
 echo "Done. Kubernetes resources removed."

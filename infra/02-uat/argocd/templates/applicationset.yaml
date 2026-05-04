@@ -29,6 +29,8 @@ spec:
               value: "true"
             - name: externalSecret.enabled
               value: "true"
+            - name: ingress.className
+              value: {{ $.Values.ingressClassName | quote }}
       destination:
         server: https://kubernetes.default.svc
         namespace: uat

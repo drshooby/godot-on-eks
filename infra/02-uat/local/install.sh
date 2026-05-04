@@ -36,22 +36,45 @@ echo ""
 echo "==> Applying namespaces..."
 kubectl apply -f "$UAT_DIR/namespaces.yaml"
 
-# ── 2. Traefik ingress controller ────────────────────────────────────────────
-# Locally Traefik runs as LoadBalancer so Docker Desktop exposes it on
+# ── 2. Ingress controller ────────────────────────────────────────────────────
+# Locally the controller runs as LoadBalancer so Docker Desktop exposes it on
 # localhost. On EKS the service is NodePort behind a Terraform-managed ALB.
-echo ""
-echo "==> Installing Traefik (v34.x)..."
-helm repo add traefik https://traefik.github.io/charts --force-update
-helm upgrade --install traefik traefik/traefik \
-  --version 34.2.0 \
-  -n traefik \
-  --create-namespace \
-  --set "service.type=LoadBalancer" \
-  --set "ports.web.redirectTo=null" \
-  --set "ingressClass.enabled=true" \
-  --set "ingressClass.isDefaultClass=true" \
-  --set "ingressClass.name=traefik" \
-  --wait
+# Switch controller with: INGRESS_CONTROLLER=kong infra/02-uat/local/install.sh
+INGRESS_CONTROLLER="${INGRESS_CONTROLLER:-traefik}"
+case "$INGRESS_CONTROLLER" in
+  traefik|kong) ;;
+  *) echo "ERROR: INGRESS_CONTROLLER must be 'traefik' or 'kong' (got '$INGRESS_CONTROLLER')."; exit 1 ;;
+esac
+
+if [[ "$INGRESS_CONTROLLER" == "traefik" ]]; then
+  echo ""
+  echo "==> Installing Traefik (v34.x)..."
+  helm repo add traefik https://traefik.github.io/charts --force-update
+  helm upgrade --install traefik traefik/traefik \
+    --version 34.2.0 \
+    -n traefik \
+    --create-namespace \
+    --set "service.type=LoadBalancer" \
+    --set "ports.web.redirectTo=null" \
+    --set "ingressClass.enabled=true" \
+    --set "ingressClass.isDefaultClass=true" \
+    --set "ingressClass.name=traefik" \
+    --wait
+else
+  echo ""
+  echo "==> Installing Kong (v3.2.0)..."
+  helm repo add kong https://charts.konghq.com --force-update
+  helm upgrade --install kong kong/kong \
+    --version 3.2.0 \
+    -n kong \
+    --create-namespace \
+    --set "ingressController.installCRDs=true" \
+    --set "ingressController.ingressClass=kong" \
+    --set "proxy.type=LoadBalancer" \
+    --set "proxy.http.enabled=true" \
+    --set "proxy.tls.enabled=false" \
+    --wait
+fi
 
 # ── 3. MySQL ─────────────────────────────────────────────────────────────────
 echo ""
@@ -106,14 +129,15 @@ helm upgrade --install shooter "$UAT_DIR/helm/shooter" \
   -n uat \
   --set image.repository=shooter \
   --set image.tag=uat-latest \
+  --set ingress.className="$INGRESS_CONTROLLER" \
   --set ingress.hosts[0]=localhost \
   --wait
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-echo "Done. Traefik LoadBalancer should be reachable at http://localhost"
+echo "Done. $INGRESS_CONTROLLER LoadBalancer should be reachable at http://localhost"
 echo ""
 echo "Check pod status:      kubectl get pods -n uat"
-echo "Check Traefik:         kubectl get svc -n traefik"
+echo "Check ingress ctrl:    kubectl get svc -n $INGRESS_CONTROLLER"
 echo "Check Ingress:         kubectl get ingress -n uat"
 echo "Shooter logs:          kubectl logs -n uat -l app.kubernetes.io/name=shooter"

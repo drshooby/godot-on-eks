@@ -53,14 +53,32 @@ output "acm_certificate_arn" {
   value       = aws_acm_certificate.uat.arn
 }
 
-output "traefik_target_group_name" {
-  description = "Target group name the ALB forwards to (Traefik NodePort)."
+output "ingress_target_group_name" {
+  description = "Target group name the ALB forwards to (ingress-controller NodePort, Traefik or Kong)."
   value       = aws_lb_target_group.traefik.name
 }
 
+# Backward-compat alias — old name kept so existing scripts/docs keep working.
+output "traefik_target_group_name" {
+  description = "Deprecated alias for ingress_target_group_name."
+  value       = aws_lb_target_group.traefik.name
+}
+
+output "ingress_http_nodeport" {
+  description = "NodePort the in-cluster ingress controller (Traefik or Kong) HTTP entrypoint must bind to. install.sh passes this to the Helm release."
+  value       = var.ingress_http_nodeport
+}
+
+# Backward-compat alias — old name kept so existing install.sh / scripts keep
+# working through the rename.
 output "traefik_http_nodeport" {
-  description = "NodePort the Traefik HTTP entrypoint must bind to (install.sh passes this to the Helm release)."
-  value       = var.traefik_http_nodeport
+  description = "Deprecated alias for ingress_http_nodeport."
+  value       = var.ingress_http_nodeport
+}
+
+output "ingress_controller" {
+  description = "Which ingress controller install.sh should install (\"traefik\" or \"kong\"). Argo CD ApplicationSet propagates this as ingress.className on app charts."
+  value       = var.ingress_controller
 }
 
 output "rds_endpoint" {
