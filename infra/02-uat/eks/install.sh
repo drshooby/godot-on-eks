@@ -10,8 +10,8 @@
 #   - Images pushed to ECR (tag uat-latest)
 #
 # Edge architecture:
-#   ALB (Terraform) → NodePort (Traefik) → Ingress → Service → Pod
-#   TLS terminates at the ALB (ACM cert). Traefik speaks plain HTTP internally.
+#   ALB (Terraform) → NodePort (Kong) → Ingress → Service → Pod
+#   TLS terminates at the ALB (ACM cert). Kong speaks plain HTTP internally.
 #
 # To tear everything down:
 #   infra/02-uat/eks/teardown.sh
@@ -28,13 +28,14 @@ AWS_ACCOUNT_ID="$(terraform -chdir="$TF_DIR" output -raw aws_account_id)"
 AWS_REGION="$(terraform -chdir="$TF_DIR" output -raw aws_region)"
 IRSA_ROLE_ARN="$(terraform -chdir="$TF_DIR" output -raw external_secrets_irsa_role_arn)"
 CLUSTER_NAME="$(terraform -chdir="$TF_DIR" output -raw cluster_name)"
-TRAEFIK_NODEPORT="$(terraform -chdir="$TF_DIR" output -raw traefik_http_nodeport)"
+INGRESS_NODEPORT="$(terraform -chdir="$TF_DIR" output -raw ingress_http_nodeport)"
 
-echo "  Account:  $AWS_ACCOUNT_ID"
-echo "  Region:   $AWS_REGION"
-echo "  Cluster:  $CLUSTER_NAME"
-echo "  IRSA ARN: $IRSA_ROLE_ARN"
-echo "  Traefik NodePort: $TRAEFIK_NODEPORT"
+echo "  Account:           $AWS_ACCOUNT_ID"
+echo "  Region:            $AWS_REGION"
+echo "  Cluster:           $CLUSTER_NAME"
+echo "  IRSA ARN:          $IRSA_ROLE_ARN"
+echo "  Ingress controller: Kong"
+echo "  Ingress NodePort:  $INGRESS_NODEPORT"
 
 # Sanity-check kubectl points at the right cluster.
 CONTEXT="$(kubectl config current-context)"
@@ -51,22 +52,23 @@ echo ""
 echo "==> Applying namespaces..."
 kubectl apply -f "$UAT_DIR/namespaces.yaml"
 
-# ── 2. Traefik ingress controller ────────────────────────────────────────────
+# ── 2. Kong Ingress Controller ───────────────────────────────────────────────
 # Service type=NodePort: the Terraform ALB target group forwards to
-# TRAEFIK_NODEPORT on every EKS node. Registers IngressClass "traefik".
+# INGRESS_NODEPORT on every EKS node. Registers IngressClass "kong" for app
+# charts (shooter, …) via ingress.className.
 echo ""
-echo "==> Installing Traefik (v34.x)..."
-helm repo add traefik https://traefik.github.io/charts --force-update
-helm upgrade --install traefik traefik/traefik \
-  --version 34.2.0 \
-  -n traefik \
+echo "==> Installing Kong (v3.2.0)..."
+helm repo add kong https://charts.konghq.com --force-update
+helm upgrade --install kong kong/kong \
+  --version 3.2.0 \
+  -n kong \
   --create-namespace \
-  --set "service.type=NodePort" \
-  --set "ports.web.nodePort=${TRAEFIK_NODEPORT}" \
-  --set "ports.web.redirectTo=null" \
-  --set "ingressClass.enabled=true" \
-  --set "ingressClass.isDefaultClass=true" \
-  --set "ingressClass.name=traefik" \
+  --set "ingressController.installCRDs=true" \
+  --set "ingressController.ingressClass=kong" \
+  --set "proxy.type=NodePort" \
+  --set "proxy.http.enabled=true" \
+  --set "proxy.http.nodePort=${INGRESS_NODEPORT}" \
+  --set "proxy.tls.enabled=false" \
   --wait
 
 # ── 3. External Secrets Operator ─────────────────────────────────────────────
@@ -104,6 +106,7 @@ helm dependency build "$UAT_DIR/argocd" 2>/dev/null || true
 helm upgrade --install argo-cd "$UAT_DIR/argocd" \
   -f "$UAT_DIR/argocd/values.yaml" \
   --set awsAccountId="$AWS_ACCOUNT_ID" \
+  --set ingressClassName=kong \
   -n argocd \
   --wait
 
@@ -120,7 +123,7 @@ echo "Argo CD deploys all apps via the ApplicationSet (platform,"
 echo "auth-service, score-service, session-service, shooter)."
 echo ""
 echo "Edge:  ALB ($ALB_DNS)"
-echo "         → Traefik NodePort $TRAEFIK_NODEPORT"
+echo "         → Kong NodePort $INGRESS_NODEPORT"
 echo "           → Ingress → Services"
 echo ""
 echo "Next steps:"
@@ -128,11 +131,11 @@ echo ""
 echo "  1. Check Argo apps are syncing:"
 echo "     kubectl get applications -n argocd"
 echo ""
-echo "  2. Confirm Traefik registered the IngressClass and is receiving targets:"
+echo "  2. Confirm Kong registered the IngressClass and is receiving targets:"
 echo "     kubectl get ingressclass"
 echo "     aws elbv2 describe-target-health \\"
 echo "       --target-group-arn \"\$(aws elbv2 describe-target-groups \\"
-echo "         --names \$(terraform -chdir=$TF_DIR output -raw cluster_name)-traefik \\"
+echo "         --names \$(terraform -chdir=$TF_DIR output -raw ingress_target_group_name) \\"
 echo "         --query 'TargetGroups[0].TargetGroupArn' --output text)\""
 echo ""
 echo "  3. Once Argo syncs shooter, verify: https://$UAT_FQDN"

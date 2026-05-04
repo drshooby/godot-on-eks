@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb" {
   name        = "${var.uat_cluster_name}-alb"
-  description = "UAT ALB (public) → Traefik NodePort on EKS nodes"
+  description = "UAT ALB (public) → Kong NodePort on EKS nodes"
   vpc_id      = module.vpc.vpc_id
 
   tags = var.tags
@@ -31,15 +31,15 @@ resource "aws_vpc_security_group_egress_rule" "alb_all" {
   description       = "Allow all egress (to EKS nodes)"
 }
 
-# Let the ALB reach EKS nodes on the Traefik NodePort. EKS module manages the
-# node SG; we add a targeted rule rather than loosening its defaults.
+# Let the ALB reach EKS nodes on Kong's NodePort. EKS module manages the node
+# SG; we add a targeted rule rather than loosening its defaults.
 resource "aws_vpc_security_group_ingress_rule" "nodes_from_alb" {
   security_group_id            = module.eks.node_security_group_id
   referenced_security_group_id = aws_security_group.alb.id
-  from_port                    = var.traefik_http_nodeport
-  to_port                      = var.traefik_http_nodeport
+  from_port                    = var.ingress_http_nodeport
+  to_port                      = var.ingress_http_nodeport
   ip_protocol                  = "tcp"
-  description                  = "ALB → Traefik NodePort"
+  description                  = "ALB → Kong NodePort"
 }
 
 resource "aws_lb" "uat" {
@@ -52,15 +52,15 @@ resource "aws_lb" "uat" {
   tags = var.tags
 }
 
-resource "aws_lb_target_group" "traefik" {
-  name        = "${var.uat_cluster_name}-traefik"
-  port        = var.traefik_http_nodeport
+resource "aws_lb_target_group" "ingress" {
+  name        = "${var.uat_cluster_name}-ingress"
+  port        = var.ingress_http_nodeport
   protocol    = "HTTP"
   target_type = "instance"
   vpc_id      = module.vpc.vpc_id
 
-  # Traefik returns 404 for unknown Hosts but the port itself is up — accept
-  # anything in 200-404 so the health check just verifies Traefik is listening.
+  # Kong returns 404 for unknown Hosts but the port itself is up — accept
+  # anything in 200-404 so the health check just verifies Kong is listening.
   health_check {
     path                = "/"
     port                = "traffic-port"
@@ -77,11 +77,11 @@ resource "aws_lb_target_group" "traefik" {
 
 # Attach every EKS managed-node-group ASG to the target group so new nodes
 # register automatically.
-resource "aws_autoscaling_attachment" "nodes_to_traefik" {
+resource "aws_autoscaling_attachment" "nodes_to_ingress" {
   for_each = toset(module.eks.eks_managed_node_groups["primary"].node_group_autoscaling_group_names)
 
   autoscaling_group_name = each.value
-  lb_target_group_arn    = aws_lb_target_group.traefik.arn
+  lb_target_group_arn    = aws_lb_target_group.ingress.arn
 }
 
 resource "aws_lb_listener" "http" {
@@ -108,6 +108,6 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.traefik.arn
+    target_group_arn = aws_lb_target_group.ingress.arn
   }
 }

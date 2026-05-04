@@ -18,9 +18,9 @@ echo "==> Deleting namespaces (uat, external-secrets)..."
 kubectl delete namespace uat external-secrets --ignore-not-found
 
 echo ""
-echo "==> Removing Traefik..."
-helm uninstall traefik -n traefik 2>/dev/null && echo "  traefik removed" || echo "  traefik not found (skipped)"
-kubectl delete namespace traefik --ignore-not-found
+echo "==> Removing Kong..."
+helm uninstall kong -n kong 2>/dev/null && echo "  kong removed" || echo "  kong not found (skipped)"
+kubectl delete namespace kong --ignore-not-found
 
 echo ""
 echo "Done. Cluster is clean."

@@ -4,6 +4,12 @@ targetRevision: main
 # Set at install time: helm upgrade --install ... --set awsAccountId=123456789012
 awsAccountId: ""
 
+# IngressClass that app charts (e.g. shooter) attach their Ingress resources to.
+# Must match Kong (installed by install.sh). Override at install time:
+#   helm upgrade --install ... --set ingressClassName=kong
+# Drives ingress.className on every app via the ApplicationSet template.
+ingressClassName: kong
+
 apps:
   - name: platform
   - name: auth-service
