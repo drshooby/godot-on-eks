@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb" {
   name        = "${var.uat_cluster_name}-alb"
-  description = "UAT ALB (public) → Kong NodePort on EKS nodes"
+  description = "UAT ALB (public) to Kong NodePort on EKS nodes"
   vpc_id      = module.vpc.vpc_id
 
   tags = var.tags
@@ -39,7 +39,7 @@ resource "aws_vpc_security_group_ingress_rule" "nodes_from_alb" {
   from_port                    = var.ingress_http_nodeport
   to_port                      = var.ingress_http_nodeport
   ip_protocol                  = "tcp"
-  description                  = "ALB → Kong NodePort"
+  description                  = "ALB to Kong NodePort"
 }
 
 resource "aws_lb" "uat" {
@@ -75,12 +75,11 @@ resource "aws_lb_target_group" "ingress" {
   tags = var.tags
 }
 
-# Attach every EKS managed-node-group ASG to the target group so new nodes
-# register automatically.
+# Attach the primary node group ASG to the target group so new nodes register
+# automatically. (Single resource avoids for_each on ASG names, which are only
+# known after the node group is created.)
 resource "aws_autoscaling_attachment" "nodes_to_ingress" {
-  for_each = toset(module.eks.eks_managed_node_groups["primary"].node_group_autoscaling_group_names)
-
-  autoscaling_group_name = each.value
+  autoscaling_group_name = one(module.eks.eks_managed_node_groups["primary"].node_group_autoscaling_group_names)
   lb_target_group_arn    = aws_lb_target_group.ingress.arn
 }
 
