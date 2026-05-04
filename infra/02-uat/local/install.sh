@@ -41,6 +41,16 @@ kubectl apply -f "$UAT_DIR/namespaces.yaml"
 # On EKS the service is NodePort behind a Terraform-managed ALB.
 echo ""
 echo "==> Installing Kong (v3.2.0)..."
+KONG_HELM_EXTRA=()
+KONG_SAMPLE_CRD=ingressclassparameterses.configuration.konghq.com
+if kubectl get crd "$KONG_SAMPLE_CRD" &>/dev/null; then
+  _krn=$(kubectl get crd "$KONG_SAMPLE_CRD" -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-name}' 2>/dev/null || true)
+  _kns=$(kubectl get crd "$KONG_SAMPLE_CRD" -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}' 2>/dev/null || true)
+  if [[ "$_krn" != "kong" || "$_kns" != "kong" ]]; then
+    echo "NOTE: Kong CRDs exist without Helm release ownership; skipping CRD install (reuse cluster CRDs)."
+    KONG_HELM_EXTRA=(--skip-crds --set "ingressController.installCRDs=false")
+  fi
+fi
 helm repo add kong https://charts.konghq.com --force-update
 helm upgrade --install kong kong/kong \
   --version 3.2.0 \
@@ -51,6 +61,7 @@ helm upgrade --install kong kong/kong \
   --set "proxy.type=LoadBalancer" \
   --set "proxy.http.enabled=true" \
   --set "proxy.tls.enabled=false" \
+  "${KONG_HELM_EXTRA[@]}" \
   --wait
 
 # ── 3. MySQL ─────────────────────────────────────────────────────────────────
