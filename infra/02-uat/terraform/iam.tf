@@ -1,4 +1,15 @@
-# IRSA for External Secrets Operator — read app secrets from Secrets Manager (narrow with app-specific policies later).
+# IAM for External Secrets Operator — reads app secrets from Secrets Manager under uat/*.
+#
+# Auth mechanism: **EKS Pod Identity** (see eks-pod-identity-agent addon in eks.tf and the
+# aws_eks_pod_identity_association below). The role's trust policy also still allows the
+# cluster's OIDC provider (IRSA) so anything lingering on the old mechanism keeps working
+# during the migration. Pod Identity takes precedence when both are present, so the
+# service account no longer needs the `eks.amazonaws.com/role-arn` annotation and the
+# install script no longer has to hand-wire `AWS_WEB_IDENTITY_TOKEN_FILE`.
+#
+# TODO: once everything is confirmed on Pod Identity, drop the OIDC statement from the
+# trust policy and remove the OIDC provider from the EKS module.
+
 data "aws_iam_policy_document" "external_secrets" {
   statement {
     sid = "SecretsManagerRead"
@@ -18,22 +29,64 @@ resource "aws_iam_policy" "external_secrets" {
   tags = var.tags
 }
 
-module "irsa_external_secrets" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.47"
+data "aws_iam_policy_document" "external_secrets_trust" {
+  # EKS Pod Identity — the pod-identity-agent exchanges the pod's service-account
+  # credentials for this role. sts:TagSession is required.
+  statement {
+    sid     = "PodIdentity"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
 
-  role_name = "uat-external-secrets"
-
-  role_policy_arns = {
-    secrets = aws_iam_policy.external_secrets.arn
-  }
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["external-secrets:external-secrets"]
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
     }
   }
+
+  # IRSA (OIDC) — kept for backward compatibility while migrating. Safe to delete along
+  # with the OIDC provider once Pod Identity is verified end-to-end.
+  statement {
+    sid     = "IRSA"
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:external-secrets:external-secrets"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "external_secrets" {
+  name               = "uat-external-secrets"
+  assume_role_policy = data.aws_iam_policy_document.external_secrets_trust.json
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "external_secrets" {
+  role       = aws_iam_role.external_secrets.name
+  policy_arn = aws_iam_policy.external_secrets.arn
+}
+
+# Bind the role to the external-secrets/external-secrets service account via Pod Identity.
+resource "aws_eks_pod_identity_association" "external_secrets" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "external-secrets"
+  service_account = "external-secrets"
+  role_arn        = aws_iam_role.external_secrets.arn
 
   tags = var.tags
 }

@@ -70,7 +70,7 @@ infra/02-uat/local/teardown.sh
 
 ### 1. Terraform
 
-Provisions VPC, EKS, RDS MySQL, Route 53 zone + record, ACM cert, ALB + target group, IRSA for External Secrets. ECR repos live in `infra/00-setup`.
+Provisions VPC, EKS, RDS MySQL, Route 53 zone + record, ACM cert, ALB + target group, and the IAM role + EKS Pod Identity association for External Secrets. ECR repos live in `infra/00-setup`.
 
 ```bash
 cd infra/02-uat/terraform
@@ -103,16 +103,28 @@ infra/02-uat/eks/install.sh
 | Step | Resource | Notes |
 |------|----------|-------|
 | Namespaces | `argocd`, `uat`, `external-secrets` | from `namespaces.yaml` |
-| Ingress controller | Kong v3.2.0 via Helm | `NodePort` (`var.ingress_http_nodeport`, default 30080) matching the Terraform ALB target group. Registers `IngressClass: kong`. |
-| External Secrets Operator | latest via Helm | IRSA-annotated from Terraform output |
-| Argo CD | v7.8.8 (argo-helm) | `awsAccountId` and `ingressClassName` injected from Terraform / install flag |
+| Traefik | v34.x via Helm | `NodePort` matching the Terraform ALB target group; registers `IngressClass: traefik` |
+| External Secrets Operator | latest via Helm | AWS creds via EKS Pod Identity (see below) |
+| Argo CD | v7.8.8 (argo-helm) | `awsAccountId` injected from Terraform |
 
 Argo CD's **ApplicationSet** deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
 - `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
 - `env.enabled` = true (mount `<service>-env` Secret)
 - `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)
 
-### 3. Post-install
+### 3. Pod Identity (how ESO gets AWS creds)
+
+External Secrets used to rely on **IRSA**: an OIDC provider, a role trust policy tied to a specific service account subject, and the in-cluster `pod-identity-webhook` mutating pods at admission to inject `AWS_WEB_IDENTITY_TOKEN_FILE` + a projected token volume. On this cluster the webhook silently no-opped (`failurePolicy: Ignore`), so the install script had to hand-roll the volume, mount, and env vars — the workaround the README used to call out under "Known issues".
+
+This is now handled with **[EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)**:
+
+- Terraform enables the `eks-pod-identity-agent` EKS managed addon (see `terraform/eks.tf`). The agent runs as a DaemonSet in `kube-system` and serves credentials to pods over a local IMDS-style endpoint.
+- `terraform/iam.tf` defines one IAM role (`uat-external-secrets`) whose trust policy allows `pods.eks.amazonaws.com` with `sts:AssumeRole` + `sts:TagSession`. An `aws_eks_pod_identity_association` binds it to the `external-secrets/external-secrets` service account.
+- The install script no longer passes `extraVolumes` / `extraVolumeMounts` / `extraEnv` for IRSA, and no longer needs the `eks.amazonaws.com/role-arn` annotation on the service account. It does wait for the `eks-pod-identity-agent` DaemonSet to be Ready before installing ESO, so startup failures surface immediately instead of later as `InvalidProviderConfig`.
+
+The OIDC provider is still provisioned (module default) and the role's trust policy still accepts the old IRSA federated principal, so nothing left on IRSA breaks. This is transitional — once everything is confirmed on Pod Identity, the IRSA trust statement and the OIDC provider can be removed.
+
+### 4. Post-install
 
 1. **Check Argo apps sync:** `kubectl get applications -n argocd`
 2. **Confirm ALB target group has healthy targets** (`aws elbv2 describe-target-health ...`).
@@ -133,17 +145,3 @@ infra/02-uat/eks/teardown.sh
 
 Then `terraform -chdir=infra/02-uat/terraform destroy` removes the ALB, ACM cert, Route 53 record, RDS, EKS, and VPC in one go. No more subnet/IGW dependency hangs.
 
----
-
-## Known issues
-
-### IRSA webhook not injecting tokens into ESO pods
-
-**Symptom:** `ClusterSecretStore` shows `InvalidProviderConfig` / `unable to create session: an IAM role must be associated with service account`. The EKS pod-identity-webhook (`127.0.0.1:23443`) exists with `failurePolicy: Ignore` but silently fails to inject the projected service account token and `AWS_*` env vars into pods, even though the OIDC provider and IAM trust policy are correct.
-
-**Current fix:** The install script passes explicit IRSA volume/env overrides to the ESO Helm release (`extraVolumes`, `extraVolumeMounts`, `extraEnv` for `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, `AWS_REGION`), bypassing the webhook entirely.
-
-**To explore:**
-- Check if installing the `eks-pod-identity-agent` EKS addon resolves the webhook issue (the cluster currently has no managed addons).
-- Check if the webhook works on newer EKS versions (cluster is currently 1.31).
-- Consider switching from IRSA to [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) (simpler, no OIDC provider needed).

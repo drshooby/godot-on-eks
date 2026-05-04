@@ -26,14 +26,16 @@ TF_DIR="$UAT_DIR/terraform"
 echo "==> Reading Terraform outputs..."
 AWS_ACCOUNT_ID="$(terraform -chdir="$TF_DIR" output -raw aws_account_id)"
 AWS_REGION="$(terraform -chdir="$TF_DIR" output -raw aws_region)"
-IRSA_ROLE_ARN="$(terraform -chdir="$TF_DIR" output -raw external_secrets_irsa_role_arn)"
+# Kept for visibility / debugging; the ESO install no longer consumes it (Pod Identity
+# handles the role binding in Terraform via aws_eks_pod_identity_association).
+ESO_ROLE_ARN="$(terraform -chdir="$TF_DIR" output -raw external_secrets_irsa_role_arn)"
 CLUSTER_NAME="$(terraform -chdir="$TF_DIR" output -raw cluster_name)"
 INGRESS_NODEPORT="$(terraform -chdir="$TF_DIR" output -raw ingress_http_nodeport)"
 
 echo "  Account:           $AWS_ACCOUNT_ID"
 echo "  Region:            $AWS_REGION"
 echo "  Cluster:           $CLUSTER_NAME"
-echo "  IRSA ARN:          $IRSA_ROLE_ARN"
+echo "  ESO role: $ESO_ROLE_ARN (bound via EKS Pod Identity)"
 echo "  Ingress controller: Kong"
 echo "  Ingress NodePort:  $INGRESS_NODEPORT"
 
@@ -52,7 +54,16 @@ echo ""
 echo "==> Applying namespaces..."
 kubectl apply -f "$UAT_DIR/namespaces.yaml"
 
-# ── 2. Kong Ingress Controller ───────────────────────────────────────────────
+# ── 1a. EKS Pod Identity agent ───────────────────────────────────────────────
+# Installed as an EKS managed addon by Terraform (see eks.tf). Workloads get AWS
+# creds via aws_eks_pod_identity_association — no IRSA token projection hackery.
+# Fail fast if the addon DaemonSet isn't healthy, otherwise ESO will just spin
+# on InvalidProviderConfig later.
+echo ""
+echo "==> Waiting for eks-pod-identity-agent DaemonSet to be Ready..."
+kubectl -n kube-system rollout status daemonset/eks-pod-identity-agent --timeout=120s
+
+# ── 2. Traefik ingress controller ────────────────────────────────────────────
 # Service type=NodePort: the Terraform ALB target group forwards to
 # INGRESS_NODEPORT on every EKS node. Registers IngressClass "kong" for app
 # charts (shooter, …) via ingress.className.
@@ -75,24 +86,15 @@ helm upgrade --install kong kong/kong \
 echo ""
 echo "==> Installing External Secrets Operator..."
 helm repo add external-secrets https://charts.external-secrets.io --force-update
-# Explicit IRSA volume/env — the EKS pod-identity-webhook silently fails to inject
-# these on some clusters (failurePolicy: Ignore). See README "Known issues".
+# Pod Identity supplies AWS creds directly via the eks-pod-identity-agent
+# DaemonSet + aws_eks_pod_identity_association (see terraform/iam.tf). No
+# serviceAccount annotation, no projected token volume, no AWS_* env wiring —
+# the agent mutates the pod with an IMDS-style credential endpoint at admission.
+# AWS_REGION is still useful so the SDK doesn't have to guess.
 helm upgrade --install external-secrets external-secrets/external-secrets \
   -n external-secrets \
-  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$IRSA_ROLE_ARN" \
-  --set "extraVolumes[0].name=aws-iam-token" \
-  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.audience=sts.amazonaws.com" \
-  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.expirationSeconds=86400" \
-  --set "extraVolumes[0].projected.sources[0].serviceAccountToken.path=token" \
-  --set "extraVolumeMounts[0].name=aws-iam-token" \
-  --set "extraVolumeMounts[0].mountPath=/var/run/secrets/eks.amazonaws.com/serviceaccount" \
-  --set "extraVolumeMounts[0].readOnly=true" \
-  --set "extraEnv[0].name=AWS_WEB_IDENTITY_TOKEN_FILE" \
-  --set "extraEnv[0].value=/var/run/secrets/eks.amazonaws.com/serviceaccount/token" \
-  --set "extraEnv[1].name=AWS_ROLE_ARN" \
-  --set "extraEnv[1].value=$IRSA_ROLE_ARN" \
-  --set "extraEnv[2].name=AWS_REGION" \
-  --set "extraEnv[2].value=$AWS_REGION" \
+  --set "extraEnv[0].name=AWS_REGION" \
+  --set "extraEnv[0].value=$AWS_REGION" \
   --wait
 
 # ── 4. Argo CD ───────────────────────────────────────────────────────────────
