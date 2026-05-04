@@ -10,6 +10,10 @@ apps:
   - name: score-service
   - name: session-service
   - name: shooter
+  - name: logging
+    namespace: logging
+    # Do not inject workload Helm params (see applicationset.yaml).
+    helmParams: false
 
 # Overrides for argo-cd subchart — keep the UI private by default (port-forward or internal LB later).
 argo-cd:

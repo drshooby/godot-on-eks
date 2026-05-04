@@ -1,0 +1,22 @@
+apiVersion: v2
+name: uat-logging
+description: Centralized logging for UAT — Loki (single binary) + Promtail
+type: application
+version: 0.1.0
+appVersion: "3.6.7"
+
+# Chart composition rationale:
+# We pin the two grafana/* charts directly instead of pulling the umbrella
+# `loki-stack` chart. `loki-stack` is in maintenance mode and ships an old
+# Loki (2.x) plus an opinionated Grafana that conflicts with the Grafana
+# already deployed by kube-prometheus-stack. Wiring `loki` (single binary)
+# and `promtail` separately is more explicit, lets us upgrade each on its
+# own cadence, and keeps the Grafana datasource wiring in our hands (see
+# templates/grafana-datasource.yaml).
+dependencies:
+  - name: loki
+    version: 6.55.0
+    repository: https://grafana.github.io/helm-charts
+  - name: promtail
+    version: 6.17.1
+    repository: https://grafana.github.io/helm-charts
