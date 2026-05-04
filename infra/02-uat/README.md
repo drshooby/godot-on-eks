@@ -38,7 +38,7 @@ The script checks that your `kubectl` context is `docker-desktop` before touchin
 
 | Step                       | Resource                                | Notes                             |
 | -------------------------- | --------------------------------------- | --------------------------------- |
-| Namespaces                 | `argocd`, `uat`, `external-secrets`     | from `namespaces.yaml`            |
+| Namespaces                 | `argocd`, `uat`, `external-secrets`, `logging`, `monitoring` | from `namespaces.yaml`            |
 | Traefik                    | Helm release in `traefik`               | `type: LoadBalancer` → localhost  |
 | MySQL                      | StatefulSet in `uat`                    | schema auto-applied on first boot |
 | App secrets                | `*-env` Secrets in `uat`                | DB creds + JWT secret             |
@@ -100,15 +100,18 @@ infra/02-uat/eks/install.sh
 
 | Step | Resource | Notes |
 |------|----------|-------|
-| Namespaces | `argocd`, `uat`, `external-secrets` | from `namespaces.yaml` |
+| Namespaces | `argocd`, `uat`, `external-secrets`, `logging`, `monitoring` | from `namespaces.yaml` |
 | Traefik | v34.x via Helm | `NodePort` matching the Terraform ALB target group; registers `IngressClass: traefik` |
 | External Secrets Operator | latest via Helm | IRSA-annotated from Terraform output |
 | Argo CD | v7.8.8 (argo-helm) | `awsAccountId` injected from Terraform |
 
-Argo CD's **ApplicationSet** then deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
-- `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
-- `env.enabled` = true (mount `<service>-env` Secret)
-- `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)
+Argo CD deploys two **ApplicationSets** from `infra/02-uat/argocd/templates/applicationset.yaml`:
+
+- **`uat-apps`** — workload charts (`platform`, `auth-service`, `score-service`, `session-service`, `shooter`). Each receives:
+  - `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
+  - `env.enabled` = true (mount `<service>-env` Secret)
+  - `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)
+- **`uat-infra-apps`** — charts that must **not** get those Helm parameters (today: **`logging`** / Loki + Promtail). Passing `image.repository` would incorrectly point container images at a non-existent ECR repository named after the chart.
 
 ### 3. Post-install
 
@@ -122,6 +125,16 @@ Argo CD's **ApplicationSet** then deploys all apps (platform, auth-service, scor
 kubectl port-forward svc/argo-cd-argocd-server -n argocd 8080:443
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
 ```
+
+## Centralized logging (Loki + Promtail)
+
+The **`logging`** chart (`infra/02-uat/helm/logging/`) deploys **Grafana Loki** (single binary, 20Gi filesystem PVC) and **Promtail** (DaemonSet, Kubernetes pod log discovery across **all** namespaces) into the **`logging`** namespace. **Retention** is **30 days** (`720h`), enforced by the Loki compactor.
+
+- **No ingress:** Grafana reaches Loki in-cluster at `http://loki.logging.svc.cluster.local:3100`.
+- **Grafana datasource:** the chart adds a ConfigMap in **`monitoring`** with label `grafana_datasource: "1"` so **kube-prometheus-stack** Grafana’s sidecar imports a **Loki** datasource automatically.
+- **Query in Grafana:** open **Explore**, pick datasource **Loki**, then use LogQL (for example `{namespace="uat"}`). See [Loki LogQL](https://grafana.com/docs/loki/latest/query/).
+
+Chart-specific details and Helm validation: `infra/02-uat/helm/logging/README.md`.
 
 **Tear down** (Kubernetes resources only — Terraform infra stays):
 

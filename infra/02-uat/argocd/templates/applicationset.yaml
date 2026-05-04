@@ -1,3 +1,5 @@
+# Workload charts (ECR images, env Secret mounts, ExternalSecrets).  Each element
+# receives image.repository / env.enabled / externalSecret.enabled from Argo.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -8,7 +10,10 @@ spec:
     - list:
         elements:
           {{- range .Values.apps }}
+          {{- if (.helmParams | default true) }}
           - name: {{ .name }}
+            namespace: {{ .namespace | default "uat" }}
+          {{- end }}
           {{- end }}
   template:
     metadata:
@@ -31,7 +36,47 @@ spec:
               value: "true"
       destination:
         server: https://kubernetes.default.svc
-        namespace: uat
+        namespace: "{{`{{namespace}}`}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+---
+# Infra / observability charts — no ECR image wiring (would remap Loki/Promtail
+# images to a non-existent ECR repo). Mirrors the pattern expected for charts
+# like `monitoring` when that stack lands. Each app sets `helmParams: false`.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: uat-infra-apps
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          {{- range .Values.apps }}
+          {{- if not (.helmParams | default true) }}
+          - name: {{ .name }}
+            namespace: {{ .namespace | default "uat" }}
+          {{- end }}
+          {{- end }}
+  template:
+    metadata:
+      name: "uat-{{`{{name}}`}}"
+    spec:
+      project: default
+      source:
+        repoURL: {{ .Values.gitRepo }}
+        targetRevision: {{ .Values.targetRevision }}
+        path: "infra/02-uat/helm/{{`{{name}}`}}"
+        helm:
+          valueFiles:
+            - values.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{`{{namespace}}`}}"
       syncPolicy:
         automated:
           prune: true
