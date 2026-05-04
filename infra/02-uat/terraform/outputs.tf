@@ -70,8 +70,13 @@ output "rds_endpoint" {
 
 
 output "external_secrets_irsa_role_arn" {
-  description = "Annotate the external-secrets service account with eks.amazonaws.com/role-arn"
-  value       = module.irsa_external_secrets.iam_role_arn
+  description = "IAM role ARN for the external-secrets SA. Bound via EKS Pod Identity (see aws_eks_pod_identity_association.external_secrets); the name is kept for backward compat with install.sh."
+  value       = aws_iam_role.external_secrets.arn
+}
+
+output "external_secrets_role_arn" {
+  description = "Alias of external_secrets_irsa_role_arn. Prefer this name going forward; the IRSA-suffixed one is a transitional alias."
+  value       = aws_iam_role.external_secrets.arn
 }
 
 output "aws_account_id" {
