@@ -4,34 +4,46 @@ metadata:
   name: uat-apps
   namespace: argocd
 spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   generators:
     - list:
         elements:
           {{- range .Values.apps }}
           - name: {{ .name }}
+            namespace: {{ .namespace | default "uat" | quote }}
+            ecrName: {{ .ecrName | default .name | quote }}
           {{- end }}
   template:
     metadata:
-      name: "uat-{{`{{name}}`}}"
+      name: "uat-{{`{{ .name }}`}}"
     spec:
       project: default
       source:
         repoURL: {{ .Values.gitRepo }}
         targetRevision: {{ .Values.targetRevision }}
-        path: "infra/02-uat/helm/{{`{{name}}`}}"
+        path: "infra/02-uat/helm/{{`{{ .name }}`}}"
         helm:
           valueFiles:
             - values.yaml
+          # These three parameters are no-ops for charts that don't reference
+          # them at the top-level (e.g. the monitoring wrapper around
+          # kube-prometheus-stack — its operator image lives under
+          # `kube-prometheus-stack.prometheusOperator.image`, so a top-level
+          # `image.repository` is silently dropped). `externalSecret.enabled=true`
+          # *does* reach the monitoring chart and toggles the Slack webhook
+          # ExternalSecret stub on (intended for EKS — populate the Secrets
+          # Manager key documented in helm/monitoring/values.yaml).
           parameters:
             - name: image.repository
-              value: "{{ $.Values.awsAccountId }}.dkr.ecr.us-east-1.amazonaws.com/{{`{{name}}`}}"
+              value: "{{ $.Values.awsAccountId }}.dkr.ecr.us-east-1.amazonaws.com/{{`{{ .ecrName }}`}}"
             - name: env.enabled
               value: "true"
             - name: externalSecret.enabled
               value: "true"
       destination:
         server: https://kubernetes.default.svc
-        namespace: uat
+        namespace: "{{`{{ .namespace }}`}}"
       syncPolicy:
         automated:
           prune: true

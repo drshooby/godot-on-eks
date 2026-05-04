@@ -1,0 +1,11 @@
+apiVersion: v2
+name: uat-monitoring
+description: UAT observability stack — Prometheus, Grafana, Alertmanager (kube-prometheus-stack) plus alert rules and Slack receiver wiring for issues #10 and #11.
+type: application
+version: 0.1.0
+appVersion: "84.5.0"
+
+dependencies:
+  - name: kube-prometheus-stack
+    version: 84.5.0
+    repository: https://prometheus-community.github.io/helm-charts
