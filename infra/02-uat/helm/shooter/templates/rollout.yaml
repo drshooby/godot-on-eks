@@ -1,0 +1,31 @@
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: shooter
+  labels:
+    {{- include "shooter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.rollout.revisionHistoryLimit | default 3 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shooter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shooter
+    spec:
+      containers:
+        - name: shooter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+  strategy:
+    blueGreen:
+      activeService: shooter
+      previewService: shooter-preview
+      autoPromotionEnabled: {{ .Values.rollout.autoPromotionEnabled | default false }}
+      scaleDownDelaySeconds: {{ .Values.rollout.scaleDownDelaySeconds | default 30 }}
+      # prePromotionAnalysis / postPromotionAnalysis: see auth-service rollout.yaml.
+{{- end }}

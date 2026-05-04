@@ -1,12 +1,13 @@
-{{- if not .Values.rollout.enabled }}
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: score-service
   labels:
     {{- include "score-service.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.rollout.revisionHistoryLimit | default 3 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: score-service
@@ -33,4 +34,11 @@ spec:
             httpGet:
               path: /health
               port: {{ .Values.service.targetPort }}
+  strategy:
+    blueGreen:
+      activeService: score-service
+      previewService: score-service-preview
+      autoPromotionEnabled: {{ .Values.rollout.autoPromotionEnabled | default false }}
+      scaleDownDelaySeconds: {{ .Values.rollout.scaleDownDelaySeconds | default 30 }}
+      # prePromotionAnalysis / postPromotionAnalysis: see auth-service rollout.yaml.
 {{- end }}

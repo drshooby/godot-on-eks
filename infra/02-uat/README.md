@@ -133,6 +133,89 @@ Then `terraform -chdir=infra/02-uat/terraform destroy` removes the ALB, ACM cert
 
 ---
 
+## Production promotion (Argo Rollouts blue/green)
+
+> **Scope note.** There is no dedicated prod EKS cluster yet. The mechanism below
+> targets the **existing UAT cluster** so the end-to-end flow can be exercised.
+> A separate `infra/03-prod` cluster (own VPC/EKS/Argo CD/DNS) is tracked as a
+> follow-up issue.
+
+Promotion is triggered by pushing a semver tag (`v*`) to `main`. The
+[`release_promote.yaml`](../../.github/workflows/release_promote.yaml) workflow
+performs an **ECR-only retag** (no rebuild) and then waits on a manual approval
+before bumping the GitOps values.
+
+### Flow
+
+```
+git tag vX.Y.Z && git push --tags
+        │
+        ▼
+.github/workflows/release_promote.yaml
+        │
+        ├── retag-uat-to-prod  (uat-latest → prod-vX.Y.Z, prod-latest in ECR)
+        │
+        ├── ⏸  GitHub Environment "production" — required reviewer approval
+        │
+        └── promote-prod       (commits infra/02-uat/argocd/values-prod.yaml)
+                │
+                ▼
+        Argo CD syncs apps with rollout.enabled=true and image.tag=prod-vX.Y.Z
+                │
+                ▼
+        Argo Rollouts (blueGreen)
+          - new ReplicaSet (green) comes up
+          - <name>-preview Service routes to green; <name> Service stays on blue
+          - autoPromotionEnabled: false → wait for manual cutover
+                │
+                ▼
+        kubectl argo rollouts promote <service> -n uat   # per service
+          - <name> Service flips to green
+          - blue scales down after scaleDownDelaySeconds (30s)
+```
+
+### One-time setup
+
+1. **Install the Argo Rollouts controller** — handled by `infra/02-uat/eks/install.sh`
+   (helm release `argo-rollouts` in the `argo-rollouts` namespace, CRDs included).
+2. **Create the GitHub `production` environment** with required reviewer(s):
+   Settings → Environments → New environment → `production` → check **Required reviewers**.
+   Docs: <https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#required-reviewers>
+3. **Install the kubectl plugin** for promotion:
+   `kubectl krew install argo-rollouts` (or download the standalone binary).
+
+### Per-service opt-in
+
+Each chart in `infra/02-uat/helm/<svc>` has a `rollout.enabled` value (default
+`false`). When `true`, the chart renders an `argoproj.io/v1alpha1/Rollout` plus
+a `<name>-preview` Service in place of the standard `Deployment`. The active
+Service name is unchanged so existing Ingress/`ApplicationSet` wiring keeps
+working.
+
+```bash
+helm template t infra/02-uat/helm/auth-service --set rollout.enabled=true
+```
+
+### Manual cutover & rollback
+
+```bash
+# observe blue/green status
+kubectl argo rollouts get rollout auth-service -n uat --watch
+
+# promote (preview → active)
+kubectl argo rollouts promote auth-service -n uat
+
+# abort and keep blue active
+kubectl argo rollouts abort auth-service -n uat
+
+# undo a promoted release
+kubectl argo rollouts undo auth-service -n uat
+```
+
+`prePromotionAnalysis` / `postPromotionAnalysis` hooks are stubbed (commented)
+in `templates/rollout.yaml` — wire them to `AnalysisTemplate`s once those exist
+(out of scope for this change).
+
 ## Known issues
 
 ### IRSA webhook not injecting tokens into ESO pods
