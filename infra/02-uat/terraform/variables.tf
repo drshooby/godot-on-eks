@@ -71,8 +71,8 @@ variable "tags" {
   }
 }
 
-variable "traefik_http_nodeport" {
-  description = "NodePort that Traefik's HTTP entrypoint listens on (ALB target group forwards here). Must match the Helm install."
+variable "ingress_http_nodeport" {
+  description = "NodePort that Kong's HTTP proxy listens on. The ALB target group forwards here, and install.sh passes this value to the Helm release so Kong binds the matching port."
   type        = number
   default     = 30080
 }

@@ -53,14 +53,14 @@ output "acm_certificate_arn" {
   value       = aws_acm_certificate.uat.arn
 }
 
-output "traefik_target_group_name" {
-  description = "Target group name the ALB forwards to (Traefik NodePort)."
-  value       = aws_lb_target_group.traefik.name
+output "ingress_target_group_name" {
+  description = "Target group name the ALB forwards to (Kong NodePort)."
+  value       = aws_lb_target_group.ingress.name
 }
 
-output "traefik_http_nodeport" {
-  description = "NodePort the Traefik HTTP entrypoint must bind to (install.sh passes this to the Helm release)."
-  value       = var.traefik_http_nodeport
+output "ingress_http_nodeport" {
+  description = "NodePort Kong's HTTP proxy must bind to. install.sh passes this to the Helm release."
+  value       = var.ingress_http_nodeport
 }
 
 output "rds_endpoint" {

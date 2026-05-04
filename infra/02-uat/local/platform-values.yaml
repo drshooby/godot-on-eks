@@ -1,5 +1,5 @@
 # Platform chart overrides for local Docker Desktop testing.
-# Traefik runs as LoadBalancer locally (Docker Desktop exposes it on localhost).
+# Kong runs as LoadBalancer locally (Docker Desktop exposes it on localhost).
 # ClusterSecretStore is skipped (no IRSA / AWS locally).
 
 externalSecrets:

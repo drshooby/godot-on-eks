@@ -5,13 +5,15 @@ End state and architecture are described in **[`docs/uat-plan.md`](../../docs/ua
 ## Edge architecture
 
 ```
-Client → ALB (Terraform, ACM cert) → NodePort → Traefik → Ingress → Service → Pod
+Client → ALB (Terraform, ACM cert) → NodePort → Kong → Ingress → Service → Pod
 ```
 
 - **ALB**, **ACM certificate**, **Route 53 record**, **VPC**, **EKS**, **RDS** — all Terraform-owned. `terraform destroy` cleans everything up with no orphaned ENIs.
-- **Traefik** runs inside the cluster as an **Ingress controller** (`IngressClass: traefik`). On EKS its Service is `NodePort`; the ALB target group forwards to that port. Locally (Docker Desktop) Traefik runs as `LoadBalancer` so it is reachable on `localhost`.
-- **TLS** terminates at the ALB (ACM DNS-validated cert). Traefik speaks plain HTTP internally.
-- App charts expose traffic with standard Kubernetes `Ingress` resources (no Gateway API).
+- **Kong** runs inside the cluster as the ingress controller (`IngressClass: kong`), installed via the `kong/kong` Helm chart (v3.2.0), DB-less, ingress-controller mode, CRDs included.
+- On EKS Kong's proxy Service is `NodePort` on `var.ingress_http_nodeport` (default 30080); the ALB target group forwards to that port.
+- Locally (Docker Desktop) Kong runs as `LoadBalancer` so it is reachable on `localhost`.
+- **TLS** terminates at the ALB (ACM DNS-validated cert). Kong speaks plain HTTP internally.
+- App charts expose traffic with standard Kubernetes `Ingress` resources (no Gateway API). The `ingressClassName` is configurable per chart (`ingress.className`); the Argo CD ApplicationSet propagates a single top-level `ingressClassName` value to every app.
 
 ## Local testing (Docker Desktop)
 
@@ -26,7 +28,7 @@ docker build -f backend/docker/Dockerfile.jvm --build-arg MODULE=session-service
 docker build -f shooter/Dockerfile                                                -t shooter:uat-latest          ./shooter
 ```
 
-**Then run the install script** (sets up everything: Traefik, MySQL, secrets, all Helm charts):
+**Then run the install script** (sets up everything: Kong, MySQL, secrets, all Helm charts):
 
 ```bash
 infra/02-uat/local/install.sh
@@ -39,7 +41,7 @@ The script checks that your `kubectl` context is `docker-desktop` before touchin
 | Step                       | Resource                                | Notes                             |
 | -------------------------- | --------------------------------------- | --------------------------------- |
 | Namespaces                 | `argocd`, `uat`, `external-secrets`     | from `namespaces.yaml`            |
-| Traefik                    | Helm release in `traefik`               | `type: LoadBalancer` → localhost  |
+| Ingress controller         | Helm release in `kong`                  | `type: LoadBalancer` → localhost      |
 | MySQL                      | StatefulSet in `uat`                    | schema auto-applied on first boot |
 | App secrets                | `*-env` Secrets in `uat`                | DB creds + JWT secret             |
 | platform chart             | ClusterSecretStore disabled locally     |                                   |
@@ -51,7 +53,7 @@ The script checks that your `kubectl` context is `docker-desktop` before touchin
 | ---------------------------- | --------------------------------------- |
 | MySQL StatefulSet in-cluster | RDS MySQL via Terraform                 |
 | Plain k8s Secrets            | ExternalSecrets → Secrets Manager       |
-| Traefik `LoadBalancer`       | Traefik `NodePort` + Terraform ALB      |
+| Controller `LoadBalancer`    | Controller `NodePort` + Terraform ALB   |
 | No TLS                       | ACM cert on ALB (Let's Encrypt-free)    |
 | No Argo CD                   | Full Argo CD ApplicationSet             |
 | `awsAccountId` not needed    | Pass at `helm upgrade --install`        |
@@ -90,7 +92,7 @@ eval "$(terraform output -raw configure_kubectl)"
 
 ### 2. Install script
 
-The install script reads Terraform outputs (cluster name, account id, IRSA ARN, Traefik NodePort) and sets up the cluster:
+The install script reads Terraform outputs (cluster name, account id, IRSA ARN, Kong NodePort) and sets up the cluster:
 
 ```bash
 infra/02-uat/eks/install.sh
@@ -105,7 +107,7 @@ infra/02-uat/eks/install.sh
 | External Secrets Operator | latest via Helm | AWS creds via EKS Pod Identity (see below) |
 | Argo CD | v7.8.8 (argo-helm) | `awsAccountId` injected from Terraform |
 
-Argo CD's **ApplicationSet** then deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
+Argo CD's **ApplicationSet** deploys all apps (platform, auth-service, score-service, session-service, shooter) automatically from git. Each service gets:
 - `image.repository` = `<accountId>.dkr.ecr.us-east-1.amazonaws.com/<app-name>`
 - `env.enabled` = true (mount `<service>-env` Secret)
 - `externalSecret.enabled` = true (ESO creates the Secret from Secrets Manager)
