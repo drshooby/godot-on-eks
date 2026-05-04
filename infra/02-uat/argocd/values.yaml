@@ -10,6 +10,12 @@ apps:
   - name: score-service
   - name: session-service
   - name: shooter
+  # Wraps prometheus-community/kube-prometheus-stack. Lives in its own
+  # namespace; the ApplicationSet's image.repository/env.enabled parameters
+  # are harmless no-ops here, and externalSecret.enabled=true switches on
+  # the Slack webhook ExternalSecret stub (see helm/monitoring/values.yaml).
+  - name: monitoring
+    namespace: monitoring
 
 # Overrides for argo-cd subchart — keep the UI private by default (port-forward or internal LB later).
 argo-cd:

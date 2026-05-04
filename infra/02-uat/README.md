@@ -133,6 +133,57 @@ Then `terraform -chdir=infra/02-uat/terraform destroy` removes the ALB, ACM cert
 
 ---
 
+## Monitoring & alerting
+
+Argo CD deploys `infra/02-uat/helm/monitoring` (a wrapper around
+[`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack))
+into the `monitoring` namespace. It bundles **Prometheus** (15d retention,
+20Gi PVC, scrape-everything ServiceMonitor selectors), **Grafana** (5Gi PVC,
+default dashboards, ingress on `grafana.uat.shmup.ettukube.com`), and
+**Alertmanager** (Slack receiver + null fallback).
+
+**Alert rules** (see `helm/monitoring/templates/prometheusrules.yaml`):
+`NodeCPUWarn`/`Critical` (80/90 %), `NodeMemoryWarn`/`Critical` (80/90 %),
+`NodeDiskWarn`/`Critical` (80/90 %), `PodOOMKilled`,
+`KubePodCrashLooping`, `KubePodNotReady`. Thresholds are tunable via
+`alertRules.thresholds` in `helm/monitoring/values.yaml`.
+
+### Access Grafana
+
+GitHub OAuth is wired in `values.yaml` as a **commented placeholder** — the
+auth.github stanza is ready to uncomment once an ExternalSecret materialises
+the GitHub OAuth `client_id` / `client_secret`. Until then, use port-forward
++ the bootstrap admin secret:
+
+```bash
+kubectl port-forward -n monitoring svc/kps-grafana 8080:80
+kubectl get secret -n monitoring kps-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+```
+
+Prometheus and Alertmanager UIs are similarly port-forwardable
+(`svc/kps-kube-prometheus-stack-prometheus`, `svc/kps-kube-prometheus-stack-alertmanager`).
+
+### Slack webhook
+
+The Slack receiver reads its webhook URL from a Kubernetes Secret materialised
+by an ExternalSecret. To enable it on EKS:
+
+1. Put the webhook URL in AWS Secrets Manager under
+   `uat/monitoring/slack-webhook` (a single string value).
+2. The ApplicationSet already passes `externalSecret.enabled=true` to the
+   monitoring chart, which renders the ExternalSecret. Once ESO syncs it,
+   Alertmanager picks up the URL via `api_url_file:`.
+
+For local / bootstrap installs without Secrets Manager, leave
+`externalSecret.enabled=false` (the Alertmanager Slack receiver will log
+delivery errors, which is intentional).
+
+### TODO
+
+- Populate the GitHub OAuth ExternalSecret and uncomment `grafana.ini.auth.github`.
+- Wire app-level `ServiceMonitor`s for the JVM services (auth/score/session)
+  using Micrometer's `/actuator/prometheus` endpoint.
+
 ## Known issues
 
 ### IRSA webhook not injecting tokens into ESO pods

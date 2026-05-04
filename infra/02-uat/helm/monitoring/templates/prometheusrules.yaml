@@ -1,0 +1,108 @@
+{{- if .Values.alertRules.enabled }}
+{{- $t := .Values.alertRules.thresholds }}
+{{- $for := .Values.alertRules.for }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: uat-node-and-workload-alerts
+  labels:
+    app.kubernetes.io/name: uat-monitoring
+    app.kubernetes.io/part-of: kube-prometheus-stack
+    release: kps
+    prometheus: kps
+spec:
+  groups:
+    - name: uat.nodes
+      rules:
+        - alert: NodeCPUWarn
+          expr: |
+            100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > {{ $t.cpuWarnPct }}
+          for: {{ $for.warn }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node CPU > {{ $t.cpuWarnPct }}% on {{`{{ $labels.instance }}`}}"
+            description: "5m avg CPU is {{`{{ printf \"%.1f\" $value }}`}}% (warn threshold {{ $t.cpuWarnPct }}%)."
+
+        - alert: NodeCPUCritical
+          expr: |
+            100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > {{ $t.cpuCriticalPct }}
+          for: {{ $for.critical }}
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node CPU > {{ $t.cpuCriticalPct }}% on {{`{{ $labels.instance }}`}}"
+            description: "5m avg CPU is {{`{{ printf \"%.1f\" $value }}`}}% (critical threshold {{ $t.cpuCriticalPct }}%)."
+
+        - alert: NodeMemoryWarn
+          expr: |
+            100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > {{ $t.memoryWarnPct }}
+          for: {{ $for.warn }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node memory > {{ $t.memoryWarnPct }}% on {{`{{ $labels.instance }}`}}"
+            description: "Memory used is {{`{{ printf \"%.1f\" $value }}`}}% (warn threshold {{ $t.memoryWarnPct }}%)."
+
+        - alert: NodeMemoryCritical
+          expr: |
+            100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > {{ $t.memoryCriticalPct }}
+          for: {{ $for.critical }}
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node memory > {{ $t.memoryCriticalPct }}% on {{`{{ $labels.instance }}`}}"
+            description: "Memory used is {{`{{ printf \"%.1f\" $value }}`}}% (critical threshold {{ $t.memoryCriticalPct }}%)."
+
+        - alert: NodeDiskWarn
+          expr: |
+            100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > {{ $t.diskWarnPct }}
+          for: {{ $for.warn }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "Disk > {{ $t.diskWarnPct }}% on {{`{{ $labels.instance }}`}} ({{`{{ $labels.mountpoint }}`}})"
+            description: "Filesystem usage is {{`{{ printf \"%.1f\" $value }}`}}% (warn threshold {{ $t.diskWarnPct }}%)."
+
+        - alert: NodeDiskCritical
+          expr: |
+            100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > {{ $t.diskCriticalPct }}
+          for: {{ $for.critical }}
+          labels:
+            severity: critical
+          annotations:
+            summary: "Disk > {{ $t.diskCriticalPct }}% on {{`{{ $labels.instance }}`}} ({{`{{ $labels.mountpoint }}`}})"
+            description: "Filesystem usage is {{`{{ printf \"%.1f\" $value }}`}}% (critical threshold {{ $t.diskCriticalPct }}%)."
+
+    - name: uat.workloads
+      rules:
+        - alert: PodOOMKilled
+          expr: |
+            increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[10m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod OOMKilled: {{`{{ $labels.namespace }}/{{ $labels.pod }}`}}"
+            description: "Container {{`{{ $labels.container }}`}} was OOMKilled in the last 10m."
+
+        - alert: KubePodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total[10m]) * 600 > 3
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CrashLoop: {{`{{ $labels.namespace }}/{{ $labels.pod }}`}}"
+            description: "Container {{`{{ $labels.container }}`}} restarted >3 times in the last 10m — likely service unresponsive."
+
+        - alert: KubePodNotReady
+          expr: |
+            sum by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Unknown|Failed"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod not ready: {{`{{ $labels.namespace }}/{{ $labels.pod }}`}}"
+            description: "Pod has been in a non-Ready phase for >15m."
+{{- end }}

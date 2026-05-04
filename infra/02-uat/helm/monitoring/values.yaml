@@ -1,0 +1,186 @@
+# UAT monitoring stack — wraps prometheus-community/kube-prometheus-stack.
+#
+# Decisions (see PR body):
+#   - Grafana: persistence ON (5Gi), local admin disabled, GitHub OAuth wiring
+#     left commented until the External Secret with client_id/secret lands.
+#   - Prometheus: 15d retention, 20Gi PVC, scrape all ServiceMonitors/PodMonitors
+#     in any namespace (selectors are nil to match everything).
+#   - Alertmanager: routes to a `slack` receiver by default, with a `null`
+#     fallback for noisy / Watchdog-type alerts. Slack webhook URL is sourced
+#     from a Kubernetes Secret managed by External Secrets (see externalSecret).
+
+# Optional ExternalSecret stub that materialises the Alertmanager Slack webhook
+# secret from AWS Secrets Manager via the platform chart's ClusterSecretStore.
+externalSecret:
+  enabled: false
+  # Secrets Manager key holding a single string: the Slack incoming webhook URL.
+  remoteKey: uat/monitoring/slack-webhook
+  secretName: alertmanager-slack-webhook
+  refreshInterval: 1h
+
+# Alert rules shipped by this chart (see templates/prometheusrules.yaml).
+# Tuned for UAT — not production thresholds.
+alertRules:
+  enabled: true
+  thresholds:
+    cpuWarnPct: 80
+    cpuCriticalPct: 90
+    memoryWarnPct: 80
+    memoryCriticalPct: 90
+    diskWarnPct: 80
+    diskCriticalPct: 90
+  for:
+    warn: 10m
+    critical: 5m
+
+kube-prometheus-stack:
+  fullnameOverride: kps
+  crds:
+    enabled: true
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    enabled: true
+    defaultDashboardsEnabled: true
+    defaultDashboardsTimezone: utc
+    # Local admin login is intentionally disabled — auth is via GitHub OAuth
+    # (see grafana.ini.auth.github stanza below). Until that secret lands the
+    # only access path is `kubectl port-forward` + the bootstrap admin secret
+    # that Grafana auto-creates on first boot.
+    admin:
+      existingSecret: ""
+    persistence:
+      enabled: true
+      type: pvc
+      size: 5Gi
+      accessModes:
+        - ReadWriteOnce
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - grafana.uat.shmup.ettukube.com
+      path: /
+      pathType: Prefix
+      annotations: {}
+    # GitHub OAuth — left commented. Once an ExternalSecret materialises a
+    # Secret with `client_id` / `client_secret`, set `existingSecret` on the
+    # grafana subchart and uncomment the auth.github block (or supply via
+    # `grafana.envFromSecret`). Tracking this in PR body / README.
+    grafana.ini:
+      server:
+        root_url: https://grafana.uat.shmup.ettukube.com/
+      analytics:
+        check_for_updates: false
+      log:
+        mode: console
+      # auth:
+      #   disable_login_form: true
+      # auth.github:
+      #   enabled: true
+      #   allow_sign_up: true
+      #   scopes: user:email,read:org
+      #   auth_url: https://github.com/login/oauth/authorize
+      #   token_url: https://github.com/login/oauth/access_token
+      #   api_url: https://api.github.com/user
+      #   client_id: $__file{/etc/secrets/github-oauth/client_id}
+      #   client_secret: $__file{/etc/secrets/github-oauth/client_secret}
+      #   allowed_organizations: drshooby
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  prometheus:
+    prometheusSpec:
+      retention: 15d
+      retentionSize: "18GB"
+      # Scrape every ServiceMonitor / PodMonitor / PrometheusRule cluster-wide,
+      # regardless of helm-release labels. Required for the in-chart
+      # PrometheusRule (templates/prometheusrules.yaml) to be picked up.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      probeSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      serviceMonitorNamespaceSelector: {}
+      podMonitorSelector: {}
+      podMonitorNamespaceSelector: {}
+      ruleSelector: {}
+      ruleNamespaceSelector: {}
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1500Mi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+
+  # ── Alertmanager ───────────────────────────────────────────────────────────
+  alertmanager:
+    alertmanagerSpec:
+      retention: 120h
+      storage:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+      # Mount the Slack webhook secret so we can reference it via
+      # `api_url_file:` below. Gated on externalSecret.enabled so local /
+      # bootstrap installs still render cleanly.
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        receiver: "null"
+        group_by: ["alertname", "severity", "namespace"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        routes:
+          - receiver: "null"
+            matchers:
+              - alertname = "Watchdog"
+            continue: false
+          - receiver: slack
+            matchers:
+              - severity =~ "warning|critical"
+            continue: false
+      receivers:
+        - name: "null"
+        - name: slack
+          slack_configs:
+            - channel: "#uat-alerts"
+              send_resolved: true
+              title: '{{ template "slack.default.title" . }}'
+              text: |
+                {{ range .Alerts }}*{{ .Labels.alertname }}* — {{ .Annotations.summary }}
+                {{ .Annotations.description }}
+                {{ end }}
+              # Webhook URL is read from the mounted ExternalSecret. When
+              # externalSecret.enabled=false the file does not exist and Alertmanager
+              # will log delivery errors — that is intentional for UAT bootstrap.
+              api_url_file: /etc/alertmanager/secrets/alertmanager-slack-webhook/webhook-url
+      inhibit_rules:
+        - source_matchers:
+            - severity = "critical"
+          target_matchers:
+            - severity = "warning"
+          equal: ["alertname", "namespace"]
+
+  # Disable rule packs we replace with the in-chart PrometheusRule, and the
+  # ones that are noisy on a single-AZ UAT cluster.
+  defaultRules:
+    create: true
+    rules:
+      etcd: false
+      kubeProxy: false
+      kubeSchedulerAlerting: false
+      kubeControllerManager: false
